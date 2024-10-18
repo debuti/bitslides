@@ -1,22 +1,33 @@
-use clap::{
-    value_parser, Arg, ArgAction, Command,
-};
+use anyhow::{bail, Result};
+use clap::{builder::Str, value_parser, Arg, ArgAction, Command};
 use dirs::home_dir;
 use serde::Deserialize;
 use std::{fs, path::PathBuf};
-use anyhow::Result;
-
 
 const APP_NAME: &'static str = env!("CARGO_PKG_NAME");
 const APP_VERS: &'static str = env!("CARGO_PKG_VERSION");
 
 #[derive(Deserialize)]
 struct Config {
-    sync_interval: u64, // Sync interval in seconds
-    source: String,     // Source folder
-    target: String,     // Target folder
+    keyword: Option<String>,
+    roots: Vec<PathBuf>,
 }
 
+#[derive(Debug)]
+
+struct Location {
+    name: String,
+    path: PathBuf,
+}
+
+impl Location {
+    fn new(name: String, path: PathBuf) -> Self {
+        Self {
+            name: name,
+            path: path,
+        }
+    }
+}
 
 fn read_yaml_config(file_path: &str) -> Result<Config> {
     let file_content = fs::read_to_string(file_path)?;
@@ -74,11 +85,9 @@ async fn main() {
         let config;
 
         if config_path.exists() {
-            if let Ok(read_config) = read_yaml_config(config_path.to_str().unwrap())
-            {
+            if let Ok(read_config) = read_yaml_config(config_path.to_str().unwrap()) {
                 config = read_config;
-            }
-            else {
+            } else {
                 println!(" Invalid config format");
                 continue;
             }
@@ -87,7 +96,11 @@ async fn main() {
             continue;
         };
 
-        sync_folders(&config.source, &config.target, config.sync_interval).await;
+        identify_volumes(
+            &config.keyword.unwrap_or("Queues".to_owned()),
+            &config.roots,
+        )
+        .await;
 
         run = true;
     }
@@ -97,10 +110,92 @@ async fn main() {
     }
 }
 
-async fn sync_folders(source: &str, target: &str, interval: u64) {
-    println!(
-        "Syncing from {} to {} every {} seconds",
-        source, target, interval
-    );
-    // Add sync logic here
+async fn identify_volumes(keyword: &str, roots: &[PathBuf]) {
+    let mut volumes: Vec<Location> = Vec::new();
+
+    for root in roots {
+        let root_str = root.to_string_lossy();
+
+        // Implies .exists()
+        if !root.is_dir() {
+            println!("{root_str} is not a folder");
+            continue;
+        }
+
+        let entries = root.read_dir();
+
+        if entries.is_err() {
+            println!("{root_str} cannot be read");
+            continue;
+        }
+
+        println!("{root_str}");
+
+        // Analyze the environment
+        for entry in entries.unwrap() {
+            if let Ok(entry) = entry {
+                let entry_path = entry.path();
+                let file_type = entry.file_type();
+                if let Ok(file_type) = file_type {
+                    if file_type.is_dir() {
+                        let queues_path = entry_path.join(keyword);
+                        if queues_path.exists() {
+                            volumes.push(Location::new(
+                                entry_path
+                                    .file_name()
+                                    .unwrap()
+                                    .to_string_lossy()
+                                    .to_string(),
+                                queues_path,
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    println!("Found volumes: {volumes:?}");
+
+    for volume in &volumes {
+        if let Ok(queues) = identify_queues(volume) {
+            println!("{queues:?} identified");
+        } else {
+            println!("{volume:?} failed to sync");
+        }
+    }
+
+    // for dst in &dsts {
+    //     synco(src, dst)?;
+    // }
+}
+
+fn identify_queues(src: &Location) -> Result<Vec<Location>> {
+    let mut dsts = Vec::new();
+
+    let subfolders = src.path.read_dir();
+
+    if subfolders.is_err() {
+        bail!("Unable to read the folder: {src:?}");
+    }
+
+    for entry in subfolders.unwrap() {
+        if let Ok(entry) = entry {
+            let entry_fullpath = entry.path();
+            let entry_name = entry_fullpath
+                .file_name()
+                .unwrap()
+                .to_string_lossy()
+                .to_string();
+            println!("{entry_name}\t{entry_fullpath:?}");
+            dsts.push(Location::new(entry_name, entry_fullpath));
+        }
+    }
+
+    Ok(dsts)
+}
+
+fn synco(src: &Location, dst: &Location) -> Result<()> {
+    println!("Syncing {src:?} -> {dst:?}");
+    Ok(())
 }
