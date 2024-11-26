@@ -1,8 +1,12 @@
 [package]
-name = "synchers"
+name = "bitslides"
 version = "0.1.0"
 edition = "2021"
-
+authors = ["Borja García <debuti@gmail.com>"]
+description = ""
+readme = "README.md"
+repository = "https://github.com/debuti/bitslides"
+license = "GPLv3"
 
 [dependencies]
 anyhow = "1.0"
@@ -13,3 +17,5 @@ serde_yaml = "0.9"
 tokio = { version = "1", features = ["full"] }
 clap = { version = "4.5", features = ["string"] }
 
+[dev-dependencies]
+tempfile = "3.14.0"
