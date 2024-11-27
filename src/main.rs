@@ -10,7 +10,8 @@ use std::{
 const APP_NAME: &str = env!("CARGO_PKG_NAME");
 const APP_VERS: &str = env!("CARGO_PKG_VERSION");
 
-const SLIDE_CONFIG_FILE: &str = ".slide.yml";
+const DEFAULT_SLIDE_CONFIG_FILE: &str = ".slide.yml";
+const DEFAULT_KEYWORD: &str = "Queues";
 
 #[derive(Deserialize)]
 struct GlobalConfig {
@@ -149,7 +150,7 @@ async fn main() -> Result<()> {
 
                 println!("Ok");
                 let some_volumes =
-                    process_config(&config.keyword.unwrap_or("Queues".to_owned()), &roots);
+                    process_config(&config.keyword.unwrap_or(DEFAULT_KEYWORD.to_owned()), &roots);
                 if some_volumes.is_err() {
                     println!("Error processing the configuration {config_path:?}");
                     continue;
@@ -304,7 +305,7 @@ fn identify_slides(volume: &mut Volume, keyword: &str) -> Result<()> {
 
             // Try to fetch the slide configuration if any
             let slide_conf = {
-                let slide_conf = read_slide_config(entry_fullpath.join(SLIDE_CONFIG_FILE));
+                let slide_conf = read_slide_config(entry_fullpath.join(DEFAULT_SLIDE_CONFIG_FILE));
                 match slide_conf {
                     Ok(s) => s.route,
                     Err(_) => None,

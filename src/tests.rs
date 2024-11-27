@@ -1,3 +1,5 @@
+use std::io::Write;
+
 use fs::File;
 
 use super::*;
@@ -38,12 +40,54 @@ fn setup() -> Result<TestContext> {
         File::create(slides_dir.join("not_a_slide"))?;
     }
 
-    for volume in ["baz", "qux"] {
+    /* Add some broken slide config files */
+    {
+        File::create(
+            roots[0].join(
+                ["foo", "slides", "bar", DEFAULT_SLIDE_CONFIG_FILE]
+                    .iter()
+                    .collect::<PathBuf>(),
+            ),
+        )?
+        .write("buffer: 1".as_bytes())?;
+        File::create(
+            roots[0].join(
+                ["foo", "slides", "baz", DEFAULT_SLIDE_CONFIG_FILE]
+                    .iter()
+                    .collect::<PathBuf>(),
+            ),
+        )?
+        .write("route:".as_bytes())?;
+    }
+
+    for volume in ["baz", "els"] {
         let volume_dir = roots[1].join(volume);
         let slides_dir = volume_dir.join("slides");
         for slide in ["foo", "bar", "baz", "qux"] {
             fs::create_dir_all(slides_dir.join(slide))?;
         }
+    }
+
+    /* Add a correct default route */
+    {
+        /* Maaningful since the volume is not available */
+        File::create(
+            roots[1].join(
+                ["baz", "slides", "qux", DEFAULT_SLIDE_CONFIG_FILE]
+                    .iter()
+                    .collect::<PathBuf>(),
+            ),
+        )?
+        .write("route: bar".as_bytes())?;
+        /* Maaningless since the volume is available */
+        File::create(
+            roots[1].join(
+                ["baz", "slides", "foo", DEFAULT_SLIDE_CONFIG_FILE]
+                    .iter()
+                    .collect::<PathBuf>(),
+            ),
+        )?
+        .write("route: bar".as_bytes())?;
     }
 
     Ok(TestContext { temp_dir, roots })
@@ -89,13 +133,18 @@ fn test_process_config() {
             assert!(volumes[volume].slides.contains_key(slide));
         }
     }
-    for volume in ["baz", "qux"] {
+    assert!(volumes["foo"].slides["bar"].or_else.is_none());
+    assert!(volumes["foo"].slides["baz"].or_else.is_none());
+
+    for volume in ["baz", "els"] {
         assert!(volumes.contains_key(volume));
         assert_eq!(volumes[volume].slides.len(), 4);
         for slide in ["foo", "bar", "baz", "qux"] {
             assert!(volumes[volume].slides.contains_key(slide));
         }
     }
+    assert!(volumes["baz"].slides["qux"].or_else.is_some());
+    assert!(volumes["baz"].slides["foo"].or_else.is_some());
 }
 
 #[rustfmt::skip]
@@ -106,19 +155,21 @@ fn test_build_syncjobs() {
     let volumes: HashMap<String, Volume> = process_config("slides", &ctx.roots).unwrap();
     let syncjobs = build_syncjobs(&volumes);
 
-    assert_eq!(syncjobs.len(), 10);
-    for expected_syncjob in [
+    let expected_syncjobs =[
         SyncJob {src: "foo", dst: "bar", issue: "bar", },
         SyncJob {src: "foo", dst: "baz", issue: "baz", },
         SyncJob {src: "bar", dst: "foo", issue: "foo", },
         SyncJob {src: "bar", dst: "baz", issue: "baz", },
         SyncJob {src: "baz", dst: "foo", issue: "foo", },
         SyncJob {src: "baz", dst: "bar", issue: "bar", },
-        SyncJob {src: "baz", dst: "qux", issue: "qux", },
-        SyncJob {src: "qux", dst: "foo", issue: "foo", },
-        SyncJob {src: "qux", dst: "bar", issue: "bar", },
-        SyncJob {src: "qux", dst: "baz", issue: "baz", },
-    ] {
-        assert!(syncjobs.contains(&expected_syncjob));
+        SyncJob {src: "els", dst: "foo", issue: "foo", },
+        SyncJob {src: "els", dst: "bar", issue: "bar", },
+        SyncJob {src: "els", dst: "baz", issue: "baz", },
+        // Indirect syncjobs
+        SyncJob {src: "baz", dst: "qux", issue: "bar", },
+    ];
+    assert_eq!(syncjobs.len(), expected_syncjobs.len());
+    for expected_syncjob in expected_syncjobs {
+        assert!(syncjobs.contains(&expected_syncjob), "Missing {:?}", expected_syncjob);
     }
 }
