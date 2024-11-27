@@ -1,28 +1,14 @@
 use anyhow::{bail, Result};
-use clap::{value_parser, Arg, ArgAction, ArgMatches, Command};
-use serde::Deserialize;
 use std::{
     collections::HashMap,
-    fs,
     path::{Path, PathBuf},
 };
-
-const APP_NAME: &str = env!("CARGO_PKG_NAME");
-const APP_VERS: &str = env!("CARGO_PKG_VERSION");
 
 const DEFAULT_SLIDE_CONFIG_FILE: &str = ".slide.yml";
 const DEFAULT_KEYWORD: &str = "Queues";
 
-#[derive(Deserialize)]
-struct GlobalConfig {
-    keyword: Option<String>,
-    roots: Vec<String>,
-}
-
-#[derive(Deserialize)]
-struct SlideConfig {
-    route: Option<String>,
-}
+mod cli;
+mod config;
 
 #[derive(Debug)]
 struct Slide {
@@ -68,62 +54,11 @@ impl Volume {
     }
 }
 
-fn read_global_config<P>(file_path: P) -> Result<GlobalConfig>
-where
-    P: AsRef<Path>,
-{
-    let file_content = fs::read_to_string(file_path)?;
-    let config = serde_yaml::from_str(&file_content)?;
-    Ok(config)
-}
-
-fn read_slide_config<P>(file_path: P) -> Result<SlideConfig>
-where
-    P: AsRef<Path>,
-{
-    let file_content = fs::read_to_string(file_path)?;
-    let config = serde_yaml::from_str(&file_content)?;
-    Ok(config)
-}
-
-fn default_config_files() -> Vec<PathBuf> {
-    let mut paths = vec![PathBuf::from("/etc/synchers/default.conf")];
-
-    if let Some(home_dir) = dirs::home_dir() {
-        paths.push(home_dir.join(".synchers/default.conf"));
-    }
-
-    paths
-}
-
-fn cli() -> ArgMatches {
-    Command::new(APP_NAME)
-        .version(APP_VERS)
-        .about("Synchronizes contents between locations")
-        .arg(
-            Arg::new("config")
-                .short('c')
-                .long("config")
-                .value_name("root_config")
-                .help("Specify a custom config file")
-                .action(ArgAction::Append)
-                .value_parser(value_parser!(PathBuf))
-                .default_values(
-                    default_config_files()
-                        .iter()
-                        .filter_map(|p| p.to_str().map(|s| s.to_owned()))
-                        .collect::<Vec<String>>(),
-                )
-                .required(false),
-        )
-        .get_matches()
-}
-
 #[tokio::main]
 async fn main() -> Result<()> {
     let mut run = false;
 
-    let matches = cli();
+    let matches = cli::cli();
 
     //
     let config_files = matches
@@ -136,7 +71,7 @@ async fn main() -> Result<()> {
         print!("Loading configuration from: {:?}... ", config_path);
 
         if config_path.exists() {
-            if let Ok(config) = read_global_config(config_path.to_str().unwrap()) {
+            if let Ok(config) = config::read_global_config(config_path.to_str().unwrap()) {
                 let roots = config
                     .roots
                     .into_iter()
@@ -149,8 +84,10 @@ async fn main() -> Result<()> {
                     .collect::<Vec<PathBuf>>();
 
                 println!("Ok");
-                let some_volumes =
-                    process_config(&config.keyword.unwrap_or(DEFAULT_KEYWORD.to_owned()), &roots);
+                let some_volumes = process_config(
+                    &config.keyword.unwrap_or(DEFAULT_KEYWORD.to_owned()),
+                    &roots,
+                );
                 if some_volumes.is_err() {
                     println!("Error processing the configuration {config_path:?}");
                     continue;
@@ -305,7 +242,8 @@ fn identify_slides(volume: &mut Volume, keyword: &str) -> Result<()> {
 
             // Try to fetch the slide configuration if any
             let slide_conf = {
-                let slide_conf = read_slide_config(entry_fullpath.join(DEFAULT_SLIDE_CONFIG_FILE));
+                let slide_conf =
+                    config::read_slide_config(entry_fullpath.join(DEFAULT_SLIDE_CONFIG_FILE));
                 match slide_conf {
                     Ok(s) => s.route,
                     Err(_) => None,
@@ -352,8 +290,6 @@ fn process_config(keyword: &str, roots: &[PathBuf]) -> Result<HashMap<String, Vo
 //     println!("Syncing {src:?} -> {dst:?}");
 //     Ok(())
 // }
-
-
 
 #[cfg(test)]
 mod tests;

@@ -1,8 +1,6 @@
-use std::io::Write;
-
-use fs::File;
-
 use super::*;
+use std::fs::File;
+use std::io::Write;
 
 struct TestContext {
     temp_dir: tempfile::TempDir,
@@ -21,12 +19,12 @@ fn setup() -> Result<TestContext> {
         {
             let volume_dir = roots[0].join("dude");
             let slides_dir = volume_dir.join("not_a_keyword");
-            fs::create_dir_all(&slides_dir)?;
+            std::fs::create_dir_all(&slides_dir)?;
         }
 
         {
             let volume_dir = roots[0].join("edud");
-            fs::create_dir_all(&volume_dir)?;
+            std::fs::create_dir_all(&volume_dir)?;
         }
     }
 
@@ -34,7 +32,7 @@ fn setup() -> Result<TestContext> {
         let volume_dir = roots[0].join(volume);
         let slides_dir = volume_dir.join("slides");
         for slide in ["foo", "bar", "baz"] {
-            fs::create_dir_all(slides_dir.join(slide))?;
+            std::fs::create_dir_all(slides_dir.join(slide))?;
         }
         /* Create some file in the slides folder */
         File::create(slides_dir.join("not_a_slide"))?;
@@ -64,7 +62,7 @@ fn setup() -> Result<TestContext> {
         let volume_dir = roots[1].join(volume);
         let slides_dir = volume_dir.join("slides");
         for slide in ["foo", "bar", "baz", "qux"] {
-            fs::create_dir_all(slides_dir.join(slide))?;
+            std::fs::create_dir_all(slides_dir.join(slide))?;
         }
     }
 
