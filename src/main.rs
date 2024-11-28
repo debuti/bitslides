@@ -3,12 +3,20 @@ use std::{
     collections::HashMap,
     path::{Path, PathBuf},
 };
+use tokio::task::JoinHandle;
+
+mod cli;
+mod config;
 
 const DEFAULT_SLIDE_CONFIG_FILE: &str = ".slide.yml";
 const DEFAULT_KEYWORD: &str = "Queues";
 
-mod cli;
-mod config;
+#[derive(Debug, PartialEq)]
+struct SyncJob<'a> {
+    src: &'a str,   //String,
+    dst: &'a str,   //String,
+    issue: &'a str, //String,
+}
 
 #[derive(Debug)]
 struct Slide {
@@ -26,6 +34,16 @@ impl Slide {
             name,
             path,
             or_else,
+        }
+    }
+}
+
+impl std::fmt::Display for Slide {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.or_else.is_none() {
+            write!(f, "{}", self.name,)
+        } else {
+            write!(f, "{} (->{})", self.name, self.or_else.as_ref().unwrap())
         }
     }
 }
@@ -54,10 +72,18 @@ impl Volume {
     }
 }
 
+impl std::fmt::Display for Volume {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.name)?;
+        for (_, slide) in &self.slides {
+            write!(f, "\n  - {}", slide)?;
+        }
+        Ok(())
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
-    let mut run = false;
-
     let matches = cli::cli();
 
     //
@@ -65,6 +91,20 @@ async fn main() -> Result<()> {
         .get_many::<PathBuf>("config")
         .expect("No configuration file found among provided/defaults.");
 
+    let volumes = process_all_configs(config_files.into_iter().collect())?;
+
+    println!("Volumes for all configs: {volumes:#?}");
+    println!("----");
+
+    let syncjobs = build_syncjobs(&volumes);
+
+    println!("Sync jobs: {syncjobs:#?}");
+
+    execute_syncjobs(&volumes, &syncjobs).await
+}
+
+fn process_all_configs(config_files: Vec<&PathBuf>) -> Result<HashMap<String, Volume>> {
+    let mut success = false;
     let mut volumes = HashMap::new();
 
     for config_path in config_files {
@@ -103,79 +143,40 @@ async fn main() -> Result<()> {
             continue;
         };
 
-        run = true;
+        success = true;
     }
 
-    if !run {
+    if !success {
         bail!("No valid configuration file found");
     }
 
-    println!("Volumes for all configs: {volumes:#?}");
-
-    let syncjobs = build_syncjobs(&volumes);
-
-    println!("Sync jobs: {syncjobs:#?}");
-
-    // TODO: Build the syncjobs with the volumes info
-
-    // for dst in &dsts {
-    //     synco(src, dst)?;
-    // }
-
-    // FIXME: Remove
-    Ok(())
+    Ok(volumes)
 }
 
-#[derive(Debug, PartialEq)]
-struct SyncJob<'a> {
-    src: &'a str,   //String,
-    dst: &'a str,   //String,
-    issue: &'a str, //String,
-}
+fn process_config(keyword: &str, roots: &[PathBuf]) -> Result<HashMap<String, Volume>> {
+    let mut volumes: HashMap<String, Volume> = HashMap::new();
 
-fn build_syncjobs(volumes: &HashMap<String, Volume>) -> Vec<SyncJob> {
-    let mut syncjobs = Vec::new();
-
-    for src_name in volumes.keys() {
-        for (dst_name, slide) in &volumes[src_name].slides {
-            if src_name == dst_name {
-                continue;
-            }
-
-            // If the destination volume is available, its a direct slide
-            let issue = if volumes.contains_key(dst_name) {
-                Some(dst_name)
-            } else {
-                match &slide.or_else {
-                    // If the slide has a default route, and the default route is available, its a indirect slide
-                    Some(default_route) => {
-                        if volumes.contains_key(default_route) {
-                            Some(default_route)
-                        } else {
-                            println!("default_route {default_route} not available");
-                            None
-                        }
-                    }
-                    _ => {
-                        println!("{dst_name} not available and no default route");
-                        None
-                    }
-                }
-            };
-
-            if issue.is_none() {
-                continue;
-            }
-
-            syncjobs.push(SyncJob {
-                src: src_name,
-                dst: dst_name,
-                issue: issue.unwrap(),
-            });
+    // Identify the volumes in each root
+    for root in roots {
+        match identify_volumes(root, keyword) {
+            Ok(v) => volumes.extend(v),
+            Err(e) => println!("{e}"),
         }
     }
+    println!("Found volumes: {volumes:?}");
 
-    syncjobs
+    // Identify the slides of each volume
+    for (_, volume) in volumes.iter_mut() {
+        match identify_slides(volume, keyword) {
+            Ok(_) => {}
+            Err(e) => {
+                println!("{e}");
+            }
+        }
+    }
+    println!("Completed volumes: {volumes:#?}");
+
+    Ok(volumes)
 }
 
 /// Identify volumes inside a each root folder.
@@ -257,39 +258,90 @@ fn identify_slides(volume: &mut Volume, keyword: &str) -> Result<()> {
     Ok(())
 }
 
-fn process_config(keyword: &str, roots: &[PathBuf]) -> Result<HashMap<String, Volume>> {
-    let mut volumes: HashMap<String, Volume> = HashMap::new();
+fn build_syncjobs(volumes: &HashMap<String, Volume>) -> Vec<SyncJob> {
+    let mut syncjobs = Vec::new();
 
-    // Identify the volumes in each root
-    for root in roots {
-        match identify_volumes(root, keyword) {
-            Ok(v) => volumes.extend(v),
-            Err(e) => println!("{e}"),
-        }
-    }
-    println!("Found volumes: {volumes:?}");
+    for src_name in volumes.keys() {
+        for (dst_name, slide) in &volumes[src_name].slides {
+            if src_name == dst_name {
+                continue;
+            }
 
-    // Identify the slides of each volume
-    for (_, volume) in volumes.iter_mut() {
-        match identify_slides(volume, keyword) {
-            Ok(_) => {}
-            Err(e) => {
-                println!("{e}");
+            // If the destination volume is available, its a direct slide
+            if volumes.contains_key(dst_name) {
+                syncjobs.push(SyncJob {
+                    src: src_name,
+                    dst: dst_name,
+                    issue: dst_name,
+                });
+                continue;
+            }
+
+            match &slide.or_else {
+                // If the slide has a default route, and the default route is available, its a indirect slide
+                Some(default_route) => {
+                    if volumes.contains_key(default_route) {
+                        syncjobs.push(SyncJob {
+                            src: src_name,
+                            dst: default_route,
+                            issue: dst_name,
+                        });
+                        continue;
+                    }
+                    println!("default_route {default_route} not available");
+                }
+                _ => {
+                    println!("{dst_name} not available and no default route");
+                }
             }
         }
     }
-    println!("Completed volumes: {volumes:#?}");
 
-    Ok(volumes)
+    syncjobs
 }
 
 //TODO: Implement the sync function
 //TODO: Implement the forward function. Figure out how to sort the syncs to minimize the number of operations.
+//TODO: Implement the tidy-up function. In each volume we should process the slide of the volume to move the contents to other places inside the volume
 
-// fn synco(src: &Volume, dst: &Volume) -> Result<()> {
-//     println!("Syncing {src:?} -> {dst:?}");
-//     Ok(())
-// }
+async fn execute_syncjobs(
+    volumes: &HashMap<String, Volume>,
+    syncjobs: &[SyncJob<'_>],
+) -> Result<()> {
+    let mut handles = Vec::new();
+
+    for (_, volume) in volumes.iter() {
+        println!("Volume: {volume}");
+    }
+
+    for syncjob in syncjobs {
+        println!(
+            "Syncing {:?} -{:?}-> {:?}",
+            syncjob.src, syncjob.issue, syncjob.dst
+        );
+        let src = volumes[syncjob.src].slides[syncjob.issue].path.clone();
+        let dst = volumes[syncjob.dst].slides[syncjob.issue].path.clone();
+
+        let handle: JoinHandle<Result<()>> = tokio::spawn(async move {
+            if let Err(e) = sync(&src, &dst).await {
+                bail!("Error syncing {:?} -> {:?}: {:?}", src, dst, e);
+            }
+            Ok(())
+        });
+        handles.push(handle);
+    }
+
+    for handle in handles {
+        handle.await??;
+    }
+
+    Ok(())
+}
+
+async fn sync(src: &PathBuf, dst: &PathBuf) -> Result<()> {
+    println!("Syncing {:?} -> {:?}", src, dst);
+    Ok(())
+}
 
 #[cfg(test)]
 mod tests;

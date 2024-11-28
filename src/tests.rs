@@ -164,10 +164,72 @@ fn test_build_syncjobs() {
         SyncJob {src: "els", dst: "bar", issue: "bar", },
         SyncJob {src: "els", dst: "baz", issue: "baz", },
         // Indirect syncjobs
-        SyncJob {src: "baz", dst: "qux", issue: "bar", },
+        SyncJob {src: "baz", dst: "bar", issue: "qux", },
     ];
     assert_eq!(syncjobs.len(), expected_syncjobs.len());
     for expected_syncjob in expected_syncjobs {
         assert!(syncjobs.contains(&expected_syncjob), "Missing {:?}", expected_syncjob);
     }
 }
+
+#[tokio::test]
+async fn test_execute_syncjobs() {
+    let ctx = setup().unwrap();
+
+    let volumes: HashMap<String, Volume> = process_config("slides", &ctx.roots).unwrap();
+    let syncjobs = build_syncjobs(&volumes);
+
+    // Execute the sync jobs
+    execute_syncjobs(&volumes, &syncjobs).await.unwrap();
+
+    // // Verify that the sync jobs were executed correctly
+    // for syncjob in syncjobs {
+    //     let src_slide = volumes[&syncjob.src].slides[&syncjob.issue].path.join("content");
+    //     let dst_slide = volumes[&syncjob.dst].slides[&syncjob.issue].path.join("content");
+
+    //     assert!(dst_slide.exists(), "Destination slide does not exist: {:?}", dst_slide);
+    //     assert_eq!(
+    //         std::fs::read_to_string(src_slide.clone()).unwrap(),
+    //         std::fs::read_to_string(dst_slide.clone()).unwrap(),
+    //         "Content mismatch between {:?} and {:?}",
+    //         src_slide,
+    //         dst_slide
+    //     );
+    // }
+}
+
+// #[test]
+// fn test_execute_syncjobs_with_missing_source() {
+//     let ctx = setup().unwrap();
+
+//     let mut volumes: HashMap<String, Volume> = process_config("slides", &ctx.roots).unwrap();
+//     let syncjobs = build_syncjobs(&volumes);
+
+//     // Remove a source slide to simulate a missing source
+//     let missing_slide = volumes.get_mut("foo").unwrap().slides.remove("bar").unwrap();
+//     std::fs::remove_dir_all(missing_slide.path).unwrap();
+
+//     // Execute the sync jobs
+//     let result = execute_syncjobs(&syncjobs);
+
+//     // Verify that the sync jobs failed due to the missing source
+//     assert!(result.is_err(), "Expected error due to missing source slide");
+// }
+
+// #[test]
+// fn test_execute_syncjobs_with_conflict() {
+//     let ctx = setup().unwrap();
+
+//     let mut volumes: HashMap<String, Volume> = process_config("slides", &ctx.roots).unwrap();
+//     let syncjobs = build_syncjobs(&volumes);
+
+//     // Create a conflict by modifying the destination slide
+//     let conflict_slide = volumes.get_mut("bar").unwrap().slides.get_mut("baz").unwrap();
+//     std::fs::write(conflict_slide.path.join("content"), "conflicting content").unwrap();
+
+//     // Execute the sync jobs
+//     let result = execute_syncjobs(&syncjobs);
+
+//     // Verify that the sync jobs failed due to the conflict
+//     assert!(result.is_err(), "Expected error due to conflicting content");
+// }
