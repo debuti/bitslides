@@ -3,6 +3,7 @@ use std::fs::File;
 use std::io::Write;
 
 struct TestContext {
+    #[allow(dead_code)]
     temp_dir: tempfile::TempDir,
     roots: [PathBuf; 2],
 }
@@ -107,9 +108,9 @@ fn test_identify_volumes() {
 fn test_identify_slides() {
     let ctx = setup().unwrap();
 
-    let mut volume = Volume::new("foo".to_string(), ctx.roots[0].join("foo"));
+    let mut volume = Volume::new("foo".to_string(), "slides", ctx.roots[0].join("foo"));
 
-    identify_slides(&mut volume, "slides").unwrap();
+    identify_slides(&mut volume).unwrap();
 
     assert_eq!(volume.slides.len(), 3);
     for slide in ["foo", "bar", "baz"] {
@@ -150,21 +151,21 @@ fn test_process_config() {
 fn test_build_syncjobs() {
     let ctx = setup().unwrap();
 
-    let volumes: HashMap<String, Volume> = process_config("slides", &ctx.roots).unwrap();
-    let syncjobs = build_syncjobs(&volumes);
+    let mut volumes: HashMap<String, Volume> = process_config("slides", &ctx.roots).unwrap();
+    let syncjobs = build_syncjobs(&mut volumes).unwrap();
 
     let expected_syncjobs =[
-        SyncJob {src: "foo", dst: "bar", issue: "bar", },
-        SyncJob {src: "foo", dst: "baz", issue: "baz", },
-        SyncJob {src: "bar", dst: "foo", issue: "foo", },
-        SyncJob {src: "bar", dst: "baz", issue: "baz", },
-        SyncJob {src: "baz", dst: "foo", issue: "foo", },
-        SyncJob {src: "baz", dst: "bar", issue: "bar", },
-        SyncJob {src: "els", dst: "foo", issue: "foo", },
-        SyncJob {src: "els", dst: "bar", issue: "bar", },
-        SyncJob {src: "els", dst: "baz", issue: "baz", },
+        SyncJob {src: "foo".to_owned(), dst: "bar".to_owned(), issue: "bar".to_owned(), },
+        SyncJob {src: "foo".to_owned(), dst: "baz".to_owned(), issue: "baz".to_owned(), },
+        SyncJob {src: "bar".to_owned(), dst: "foo".to_owned(), issue: "foo".to_owned(), },
+        SyncJob {src: "bar".to_owned(), dst: "baz".to_owned(), issue: "baz".to_owned(), },
+        SyncJob {src: "baz".to_owned(), dst: "foo".to_owned(), issue: "foo".to_owned(), },
+        SyncJob {src: "baz".to_owned(), dst: "bar".to_owned(), issue: "bar".to_owned(), },
+        SyncJob {src: "els".to_owned(), dst: "foo".to_owned(), issue: "foo".to_owned(), },
+        SyncJob {src: "els".to_owned(), dst: "bar".to_owned(), issue: "bar".to_owned(), },
+        SyncJob {src: "els".to_owned(), dst: "baz".to_owned(), issue: "baz".to_owned(), },
         // Indirect syncjobs
-        SyncJob {src: "baz", dst: "bar", issue: "qux", },
+        SyncJob {src: "baz".to_owned(), dst: "bar".to_owned(), issue: "qux".to_owned(), },
     ];
     assert_eq!(syncjobs.len(), expected_syncjobs.len());
     for expected_syncjob in expected_syncjobs {
@@ -176,8 +177,8 @@ fn test_build_syncjobs() {
 async fn test_execute_syncjobs() {
     let ctx = setup().unwrap();
 
-    let volumes: HashMap<String, Volume> = process_config("slides", &ctx.roots).unwrap();
-    let syncjobs = build_syncjobs(&volumes);
+    let mut volumes: HashMap<String, Volume> = process_config("slides", &ctx.roots).unwrap();
+    let syncjobs = build_syncjobs(&mut volumes).unwrap();
 
     // Execute the sync jobs
     execute_syncjobs(&volumes, &syncjobs).await.unwrap();

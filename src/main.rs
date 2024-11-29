@@ -12,10 +12,10 @@ const DEFAULT_SLIDE_CONFIG_FILE: &str = ".slide.yml";
 const DEFAULT_KEYWORD: &str = "Queues";
 
 #[derive(Debug, PartialEq)]
-struct SyncJob<'a> {
-    src: &'a str,   //String,
-    dst: &'a str,   //String,
-    issue: &'a str, //String,
+struct SyncJob {
+    src: String,
+    dst: String,
+    issue: String,
 }
 
 #[derive(Debug)]
@@ -52,6 +52,8 @@ impl std::fmt::Display for Slide {
 struct Volume {
     /// Name of the volume
     name: String,
+    /// Keyword used for the slides subfolder
+    keyword: String,
     /// Path to the volume root. Ex. /path/to/volumes/foo
     path: PathBuf,
     /// Slides that are part of the volume. Including the volume mailbox
@@ -59,9 +61,10 @@ struct Volume {
 }
 
 impl Volume {
-    fn new(name: String, path: PathBuf) -> Self {
+    fn new(name: String, keyword: &str, path: PathBuf) -> Self {
         Self {
             name,
+            keyword: keyword.to_owned(),
             path,
             slides: HashMap::new(),
         }
@@ -70,12 +73,21 @@ impl Volume {
     fn add_slide(&mut self, slide: Slide) {
         self.slides.insert(slide.name.clone(), slide);
     }
+
+    fn create_slide(&mut self, name: &str) -> Result<()>{
+        let path = self.path.join(&self.keyword).join(name);
+        println!("Creating {path:?} for slide");
+        std::fs::create_dir_all(&path)?;
+        self.slides
+            .insert(name.to_owned(), Slide::new(name.to_owned(), path, None));
+        Ok(())
+    }
 }
 
 impl std::fmt::Display for Volume {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.name)?;
-        for (_, slide) in &self.slides {
+        for slide in self.slides.values() {
             write!(f, "\n  - {}", slide)?;
         }
         Ok(())
@@ -91,12 +103,12 @@ async fn main() -> Result<()> {
         .get_many::<PathBuf>("config")
         .expect("No configuration file found among provided/defaults.");
 
-    let volumes = process_all_configs(config_files.into_iter().collect())?;
+    let mut volumes = process_all_configs(config_files.into_iter().collect())?;
 
     println!("Volumes for all configs: {volumes:#?}");
     println!("----");
 
-    let syncjobs = build_syncjobs(&volumes);
+    let syncjobs = build_syncjobs(&mut volumes)?;
 
     println!("Sync jobs: {syncjobs:#?}");
 
@@ -167,7 +179,7 @@ fn process_config(keyword: &str, roots: &[PathBuf]) -> Result<HashMap<String, Vo
 
     // Identify the slides of each volume
     for (_, volume) in volumes.iter_mut() {
-        match identify_slides(volume, keyword) {
+        match identify_slides(volume) {
             Ok(_) => {}
             Err(e) => {
                 println!("{e}");
@@ -212,7 +224,7 @@ fn identify_volumes(root: &Path, keyword: &str) -> Result<HashMap<String, Volume
                         .unwrap()
                         .to_string_lossy()
                         .to_string();
-                    volumes.insert(name.clone(), Volume::new(name, entry_path));
+                    volumes.insert(name.clone(), Volume::new(name, keyword, entry_path));
                 }
             }
         }
@@ -221,8 +233,8 @@ fn identify_volumes(root: &Path, keyword: &str) -> Result<HashMap<String, Volume
     Ok(volumes)
 }
 
-fn identify_slides(volume: &mut Volume, keyword: &str) -> Result<()> {
-    let subfolders = volume.path.join(keyword).read_dir();
+fn identify_slides(volume: &mut Volume) -> Result<()> {
+    let subfolders = volume.path.join(&volume.keyword).read_dir();
 
     if subfolders.is_err() {
         bail!("Unable to read the folder: {volume:?}");
@@ -258,7 +270,7 @@ fn identify_slides(volume: &mut Volume, keyword: &str) -> Result<()> {
     Ok(())
 }
 
-fn build_syncjobs(volumes: &HashMap<String, Volume>) -> Vec<SyncJob> {
+fn build_syncjobs(volumes: &mut HashMap<String, Volume>) -> Result<Vec<SyncJob>> {
     let mut syncjobs = Vec::new();
 
     for src_name in volumes.keys() {
@@ -270,9 +282,9 @@ fn build_syncjobs(volumes: &HashMap<String, Volume>) -> Vec<SyncJob> {
             // If the destination volume is available, its a direct slide
             if volumes.contains_key(dst_name) {
                 syncjobs.push(SyncJob {
-                    src: src_name,
-                    dst: dst_name,
-                    issue: dst_name,
+                    src: src_name.to_owned(),
+                    dst: dst_name.to_owned(),
+                    issue: dst_name.to_owned(),
                 });
                 continue;
             }
@@ -282,9 +294,9 @@ fn build_syncjobs(volumes: &HashMap<String, Volume>) -> Vec<SyncJob> {
                 Some(default_route) => {
                     if volumes.contains_key(default_route) {
                         syncjobs.push(SyncJob {
-                            src: src_name,
-                            dst: default_route,
-                            issue: dst_name,
+                            src: src_name.to_owned(),
+                            dst: default_route.to_owned(),
+                            issue: dst_name.to_owned(),
                         });
                         continue;
                     }
@@ -297,17 +309,21 @@ fn build_syncjobs(volumes: &HashMap<String, Volume>) -> Vec<SyncJob> {
         }
     }
 
-    syncjobs
+    // Create the slides that are missing in the destination volumes
+    for syncjob in &syncjobs {
+        if !volumes[&syncjob.dst].slides.contains_key(&syncjob.issue) {
+            volumes.get_mut(&syncjob.dst).unwrap().create_slide(&syncjob.issue)?;
+        }
+    }
+
+    Ok(syncjobs)
 }
 
 //TODO: Implement the sync function
 //TODO: Implement the forward function. Figure out how to sort the syncs to minimize the number of operations.
 //TODO: Implement the tidy-up function. In each volume we should process the slide of the volume to move the contents to other places inside the volume
 
-async fn execute_syncjobs(
-    volumes: &HashMap<String, Volume>,
-    syncjobs: &[SyncJob<'_>],
-) -> Result<()> {
+async fn execute_syncjobs(volumes: &HashMap<String, Volume>, syncjobs: &[SyncJob]) -> Result<()> {
     let mut handles = Vec::new();
 
     for (_, volume) in volumes.iter() {
@@ -319,8 +335,8 @@ async fn execute_syncjobs(
             "Syncing {:?} -{:?}-> {:?}",
             syncjob.src, syncjob.issue, syncjob.dst
         );
-        let src = volumes[syncjob.src].slides[syncjob.issue].path.clone();
-        let dst = volumes[syncjob.dst].slides[syncjob.issue].path.clone();
+        let src = volumes[&syncjob.src].slides[&syncjob.issue].path.clone();
+        let dst = volumes[&syncjob.dst].slides[&syncjob.issue].path.clone();
 
         let handle: JoinHandle<Result<()>> = tokio::spawn(async move {
             if let Err(e) = sync(&src, &dst).await {
