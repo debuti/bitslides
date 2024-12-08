@@ -1,96 +1,8 @@
+mod common;
+
 use super::*;
-use std::fs::File;
-use std::io::Write;
 
-struct TestContext {
-    #[allow(dead_code)]
-    temp_dir: tempfile::TempDir,
-    roots: [PathBuf; 2],
-}
-
-fn setup() -> Result<TestContext> {
-    let temp_dir = tempfile::tempdir()?;
-
-    let roots = [temp_dir.path().join("root0"), temp_dir.path().join("root1")];
-
-    //TODO: Add .slide.yml files to some places
-
-    /* Create some folders that are not a volume */
-    {
-        {
-            let volume_dir = roots[0].join("dude");
-            let slides_dir = volume_dir.join("not_a_keyword");
-            std::fs::create_dir_all(&slides_dir)?;
-        }
-
-        {
-            let volume_dir = roots[0].join("edud");
-            std::fs::create_dir_all(&volume_dir)?;
-        }
-    }
-
-    for volume in ["foo", "bar"] {
-        let volume_dir = roots[0].join(volume);
-        let slides_dir = volume_dir.join("slides");
-        for slide in ["foo", "bar", "baz"] {
-            std::fs::create_dir_all(slides_dir.join(slide))?;
-        }
-        /* Create some file in the slides folder */
-        File::create(slides_dir.join("not_a_slide"))?;
-    }
-
-    /* Add some broken slide config files */
-    {
-        File::create(
-            roots[0].join(
-                ["foo", "slides", "bar", DEFAULT_SLIDE_CONFIG_FILE]
-                    .iter()
-                    .collect::<PathBuf>(),
-            ),
-        )?
-        .write("buffer: 1".as_bytes())?;
-        File::create(
-            roots[0].join(
-                ["foo", "slides", "baz", DEFAULT_SLIDE_CONFIG_FILE]
-                    .iter()
-                    .collect::<PathBuf>(),
-            ),
-        )?
-        .write("route:".as_bytes())?;
-    }
-
-    for volume in ["baz", "els"] {
-        let volume_dir = roots[1].join(volume);
-        let slides_dir = volume_dir.join("slides");
-        for slide in ["foo", "bar", "baz", "qux"] {
-            std::fs::create_dir_all(slides_dir.join(slide))?;
-        }
-    }
-
-    /* Add a correct default route */
-    {
-        /* Maaningful since the volume is not available */
-        File::create(
-            roots[1].join(
-                ["baz", "slides", "qux", DEFAULT_SLIDE_CONFIG_FILE]
-                    .iter()
-                    .collect::<PathBuf>(),
-            ),
-        )?
-        .write("route: bar".as_bytes())?;
-        /* Maaningless since the volume is available */
-        File::create(
-            roots[1].join(
-                ["baz", "slides", "foo", DEFAULT_SLIDE_CONFIG_FILE]
-                    .iter()
-                    .collect::<PathBuf>(),
-            ),
-        )?
-        .write("route: bar".as_bytes())?;
-    }
-
-    Ok(TestContext { temp_dir, roots })
-}
+use crate::tests::common::setup;
 
 #[test]
 fn test_identify_volumes() {
@@ -183,6 +95,20 @@ async fn test_execute_syncjobs() {
     // Execute the sync jobs
     execute_syncjobs(&volumes, &syncjobs).await.unwrap();
 
+    // Check
+    println!(
+        "{:?}",
+        volumes["bar"].slides["bar"]
+            .path
+            .join("media")
+            .join("bigfile")
+    );
+
+    assert!(volumes["bar"].slides["bar"]
+        .path
+        .join("media")
+        .join("bigfile")
+        .exists());
     // // Verify that the sync jobs were executed correctly
     // for syncjob in syncjobs {
     //     let src_slide = volumes[&syncjob.src].slides[&syncjob.issue].path.join("content");

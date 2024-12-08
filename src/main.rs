@@ -1,4 +1,5 @@
 use anyhow::{bail, Result};
+use fs::{ColisionPolicy, Algorithm, MoveRequest};
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
@@ -7,6 +8,7 @@ use tokio::task::JoinHandle;
 
 mod cli;
 mod config;
+mod fs;
 
 const DEFAULT_SLIDE_CONFIG_FILE: &str = ".slide.yml";
 const DEFAULT_KEYWORD: &str = "Queues";
@@ -74,7 +76,7 @@ impl Volume {
         self.slides.insert(slide.name.clone(), slide);
     }
 
-    fn create_slide(&mut self, name: &str) -> Result<()>{
+    fn create_slide(&mut self, name: &str) -> Result<()> {
         let path = self.path.join(&self.keyword).join(name);
         println!("Creating {path:?} for slide");
         std::fs::create_dir_all(&path)?;
@@ -113,6 +115,23 @@ async fn main() -> Result<()> {
     println!("Sync jobs: {syncjobs:#?}");
 
     execute_syncjobs(&volumes, &syncjobs).await
+
+    /*
+     * TODO: Execute the tidy-up function
+     * 1. Read a .slide.yml file in foo/slides/foo folder
+     * 2. That file should have this structure
+     *  - rules:
+     *    - rule:
+     *      - regex: "^Media"
+     *      - operation: Move
+     *      - destination: "Media/Inbox" # Relative to volume root (mkdir -p if not existing)
+     *    - rule:
+     *      - regex: "^Photos/Mobile"
+     *      - operation: Move_to_new_dir
+     *      - params:
+     *        - 0: "%Y%M%D"
+     *      - destination: "Media/Photos"
+     */
 }
 
 fn process_all_configs(config_files: Vec<&PathBuf>) -> Result<HashMap<String, Volume>> {
@@ -312,7 +331,10 @@ fn build_syncjobs(volumes: &mut HashMap<String, Volume>) -> Result<Vec<SyncJob>>
     // Create the slides that are missing in the destination volumes
     for syncjob in &syncjobs {
         if !volumes[&syncjob.dst].slides.contains_key(&syncjob.issue) {
-            volumes.get_mut(&syncjob.dst).unwrap().create_slide(&syncjob.issue)?;
+            volumes
+                .get_mut(&syncjob.dst)
+                .unwrap()
+                .create_slide(&syncjob.issue)?;
         }
     }
 
@@ -326,36 +348,66 @@ fn build_syncjobs(volumes: &mut HashMap<String, Volume>) -> Result<Vec<SyncJob>>
 async fn execute_syncjobs(volumes: &HashMap<String, Volume>, syncjobs: &[SyncJob]) -> Result<()> {
     let mut handles = Vec::new();
 
-    for (_, volume) in volumes.iter() {
-        println!("Volume: {volume}");
-    }
+    // TODO: Measure the next block
+    {
+        for syncjob in syncjobs {
+            println!(
+                "Syncing {:?} -{:?}-> {:?}",
+                syncjob.src, syncjob.issue, syncjob.dst
+            );
+            let src = volumes[&syncjob.src].slides[&syncjob.issue].path.clone();
+            let dst = volumes[&syncjob.dst].slides[&syncjob.issue].path.clone();
 
-    for syncjob in syncjobs {
-        println!(
-            "Syncing {:?} -{:?}-> {:?}",
-            syncjob.src, syncjob.issue, syncjob.dst
-        );
-        let src = volumes[&syncjob.src].slides[&syncjob.issue].path.clone();
-        let dst = volumes[&syncjob.dst].slides[&syncjob.issue].path.clone();
+            let handle: JoinHandle<Result<()>> = tokio::spawn(async move {
+                if let Err(e) = sync_slide(&src, &dst).await {
+                    bail!("Error syncing {:?} -> {:?}: {:?}", src, dst, e);
+                }
+                Ok(())
+            });
+            handles.push(handle);
+        }
 
-        let handle: JoinHandle<Result<()>> = tokio::spawn(async move {
-            if let Err(e) = sync(&src, &dst).await {
-                bail!("Error syncing {:?} -> {:?}: {:?}", src, dst, e);
-            }
-            Ok(())
-        });
-        handles.push(handle);
-    }
-
-    for handle in handles {
-        handle.await??;
+        for handle in handles {
+            handle.await??;
+        }
     }
 
     Ok(())
 }
 
-async fn sync(src: &PathBuf, dst: &PathBuf) -> Result<()> {
-    println!("Syncing {:?} -> {:?}", src, dst);
+async fn sync_slide(src: &PathBuf, dst: &PathBuf) -> Result<()> {
+    println!("Syncing slide {:?} -> {:?}", src, dst);
+    
+    //TODO: Move this to cli parameters
+    let request = MoveRequest {
+        colision: ColisionPolicy::Fail,
+        safe: false,
+        checked: Some(Algorithm::CRC32),
+        retries: 5,
+    };
+
+    let entries = src.read_dir();
+    if entries.is_err() {
+        bail!("{src:?} cannot be read");
+    }
+
+    for entry in entries?.flatten() {
+        let entry_path = entry.path();
+        let file_type = entry.file_type();
+        if let Ok(file_type) = file_type {
+            if file_type.is_dir() {
+                let dst = dst.join(entry.file_name());
+                // // Create the slide if it does not exist
+                // if !dst.exists() {
+                //     std::fs::create_dir_all(&dst)?;
+                // }
+                fs::sync(&entry_path, &dst, &request).await?;
+                continue;
+            }
+            println!("Warning: {} is not a directory", entry_path.display());
+        }
+    }
+
     Ok(())
 }
 
