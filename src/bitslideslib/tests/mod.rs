@@ -2,7 +2,7 @@ mod common;
 
 use super::*;
 
-use crate::tests::common::setup;
+use common::setup;
 
 #[test]
 fn test_identify_volumes() {

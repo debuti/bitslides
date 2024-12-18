@@ -3,11 +3,6 @@ use checksums::hash_file;
 use std::path::{Path, PathBuf};
 
 /// Recursively copy the contents of one directory to another.
-///
-/// # Examples
-/// ```
-/// assert!(copy("src", "dest").is_ok());
-/// ```
 pub async fn sync<U: AsRef<Path>, V: AsRef<Path>>(
     from: U,
     to: V,

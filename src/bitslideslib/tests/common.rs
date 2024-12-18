@@ -4,19 +4,64 @@ use std::io::Write;
 use std::path::Path;
 use std::path::PathBuf;
 
-use crate::DEFAULT_SLIDE_CONFIG_FILE;
+use super::DEFAULT_SLIDE_CONFIG_FILE;
 
+/// A structure representing the context for tests, which includes a temporary directory
+/// and a collection of root paths.
 pub struct TestContext {
     #[allow(dead_code)]
+    /// A temporary directory used during the test. This field is marked with `#[allow(dead_code)]` to suppress warnings about it not being used.
     pub temp_dir: tempfile::TempDir,
+    /// A vector of `PathBuf` representing the root paths used in the test.
     pub roots: Vec<PathBuf>,
 }
 
+/// A structure representing a test folder used in unit tests.
+///
+/// This structure contains a list of subfolders and files, each represented
+/// as a tuple with the folder or file name and its contents.
 struct TestFolder {
+    /// A static slice of tuples where each tuple contains the name of the subfolder and a `TestFolder` instance representing the subfolder.
     folders: &'static [(&'static str, TestFolder)],
+    /// A static slice of tuples where each tuple contains the name of the file and a static byte slice representing the file's contents.
     files: &'static [(&'static str, &'static [u8])],
 }
 
+/// Installs a test scenario into a temporary directory and returns a `TestContext` containing the
+/// temporary directory and the root paths of the installed folders.
+///
+/// # Arguments
+///
+/// * `scenario` - A reference to a `TestFolder` structure that defines the folder and file
+///   hierarchy to be installed.
+/// * `tempdir` - A `tempfile::TempDir` instance representing the temporary directory where the
+///   scenario will be installed.
+///
+/// # Returns
+///
+/// A `Result` containing a `TestContext` with the temporary directory and the root paths of the
+/// installed folders, or an `io::Result` error if any file system operation fails.
+///
+/// # Errors
+///
+/// This function will return an error if any file system operation (such as creating directories
+/// or writing files) fails.
+///
+/// # Example
+///
+/// ```rust
+/// let tempdir = tempfile::tempdir()?;
+/// let scenario = TestFolder {
+///     folders: &[
+///         ("example", TestFolder {
+///             folders: &[],
+///             files: &[("file.txt", b"content")],
+///         }),
+///     ],
+///     files: &[],
+/// };
+/// let context = install_scenario(&scenario, tempdir)?;
+/// ```
 fn install_scenario(scenario: &TestFolder, tempdir: tempfile::TempDir) -> Result<TestContext> {
     fn install_folder(folder: &TestFolder, parent: &Path) -> Result<()> {
         std::fs::create_dir_all(&parent)?;
