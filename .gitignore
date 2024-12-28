@@ -23,3 +23,5 @@ Cargo.lock
 
 # Tarpaulin
 tarpaulin-report.html
+cobertura.xml
+coverage.xml

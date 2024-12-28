@@ -14,7 +14,7 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
-        
+
       - name: Common setup
         uses: ./.github/actions/common
         with:
@@ -45,6 +45,6 @@ jobs:
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v3
         with:
-          files: coverage.xml
+          files: cobertura.xml
           fail_ci_if_error: true
           verbose: true
