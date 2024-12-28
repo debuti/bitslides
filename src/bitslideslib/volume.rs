@@ -30,7 +30,6 @@ impl Volume {
 
     pub fn create_slide(&mut self, name: &str) -> Result<()> {
         let path = self.path.join(&self.keyword).join(name);
-        println!("Creating {path:?} for slide");
         std::fs::create_dir_all(&path)?;
         self.slides
             .insert(name.to_owned(), Slide::new(name.to_owned(), path, None));

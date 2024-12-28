@@ -49,9 +49,25 @@ pub fn cli() -> ArgMatches {
             Arg::new("dry-run")
                 .short('n')
                 .long("dry-run")
-                .help("Performs a dry run without making any changes")
+                .help("Performs a dry run without making any changes. Requires at least -vv")
                 .action(ArgAction::SetTrue)
                 .required(false),
+        )
+        .arg(
+            Arg::new("non-safe")
+                .long("non-safe")
+                .value_name("safe")
+                .help("The \"safe\" mode creates a temporary file for each file. If the move is successful, the temporary file is deleted. This option disables that behavior.")
+                .action(ArgAction::SetFalse)
+                .required(false),
+        )
+        .arg(
+            Arg::new("retries")
+                .long("retries")
+                .value_name("retries")
+                .help("Number of retries in case of a failure (checksum mismatch, etc)")
+                .value_parser(value_parser!(u8))
+                .default_value("5"),
         )
         .get_matches()
 }

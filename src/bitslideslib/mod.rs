@@ -1,12 +1,12 @@
 use anyhow::{bail, Result};
 use config::GlobalConfig;
-use fs::{Algorithm, ColisionPolicy, MoveRequest};
+use fs::MoveRequest;
 use slide::Slide;
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
 };
-use syncjob::SyncJob;
+use syncjob::{SyncJob, SyncJobs};
 use volume::Volume;
 
 pub mod config;
@@ -17,28 +17,46 @@ mod volume;
 
 const DEFAULT_SLIDE_CONFIG_FILE: &str = ".slide.yml";
 
-/// Library entry point
+/// Execute all the slides.
 ///
-/// This function will read the configuration files, identify the volumes and slides, and execute the sync jobs.
+/// This function will take the input `config`, identify the volumes and slides,
+/// and execute the sync jobs. Returns a Result indicating success or failure.
+///
 pub async fn slide(config: GlobalConfig) -> Result<()> {
+    log::debug!("Config: {config:#?}");
+
     let mut volumes = HashMap::new();
 
-    for rootset_config in config.roots {
-        let some_volumes = process_config(&rootset_config.keyword, &rootset_config.roots);
-        if some_volumes.is_err() {
-            println!("Error processing some volumes");
+    for rootset_config in config.rootsets {
+        let some_volumes = identify_env(&rootset_config.keyword, &rootset_config.roots);
+        match some_volumes {
+            Ok(v) => volumes.extend(v),
+            Err(_) => log::warn!("Error processing some volumes"),
         }
     }
 
-    println!("Volumes for all configs: {volumes:#?}");
-    println!("----");
+    log::debug!("Volumes for all configs: {volumes:#?}");
 
     let syncjobs = build_syncjobs(&mut volumes)?;
 
-    println!("Sync jobs: {syncjobs:#?}");
+    log::debug!("Sync jobs: {syncjobs:#?}");
 
-    execute_syncjobs(&volumes, &syncjobs).await
+    let move_req = MoveRequest {
+        collision: config.collision,
+        safe: false,
+        check: config.check,
+        retries: 5,
+    };
 
+    execute_syncjobs(&volumes, &syncjobs, config.dry_run, &move_req).await
+}
+
+/// Tidy up the volumes.
+///
+/// This function traverses the slides of each volume and applies the rules defined in the .slide.yml file.
+///
+pub async fn tidy_up() {
+    unimplemented!();
     /*
      * TODO: Execute the tidy-up function
      * 1. Read a .slide.yml file in foo/slides/foo folder
@@ -57,51 +75,23 @@ pub async fn slide(config: GlobalConfig) -> Result<()> {
      */
 }
 
-pub fn process_config(keyword: &str, roots: &[PathBuf]) -> Result<HashMap<String, Volume>> {
-    let mut volumes: HashMap<String, Volume> = HashMap::new();
-
-    // Identify the volumes in each root
-    for root in roots {
-        match identify_volumes(root, keyword) {
-            Ok(v) => volumes.extend(v),
-            Err(e) => println!("{e}"),
-        }
-    }
-    println!("Found volumes: {volumes:?}");
-
-    // Identify the slides of each volume
-    for (_, volume) in volumes.iter_mut() {
-        match identify_slides(volume) {
-            Ok(_) => {}
-            Err(e) => {
-                println!("{e}");
-            }
-        }
-    }
-    println!("Completed volumes: {volumes:#?}");
-
-    Ok(volumes)
-}
-
 /// Identify volumes inside a each root folder.
+///
 /// A volume is a folder that contains a slides subfolder (or the chosen keyword).
 /// This subfolder contains the folders whose names will have to match the name of other volumes.
+///
 fn identify_volumes(root: &Path, keyword: &str) -> Result<HashMap<String, Volume>> {
     let mut volumes = HashMap::new();
 
-    let root_str = root.to_string_lossy();
-
     // Implies .exists()
     if !root.is_dir() {
-        bail!("{root_str} is not a folder");
+        bail!("{} is not a folder", root.to_string_lossy());
     }
 
     let entries = root.read_dir();
     if entries.is_err() {
-        bail!("{root_str} cannot be read");
+        bail!("{} cannot be read", root.to_string_lossy());
     }
-
-    println!("{root_str}");
 
     // Analyze the contents of the root folder
     for entry in entries?.flatten() {
@@ -125,6 +115,10 @@ fn identify_volumes(root: &Path, keyword: &str) -> Result<HashMap<String, Volume
     Ok(volumes)
 }
 
+/// Identify the slides inside a volume.
+///
+/// Mutates the volume by adding the slides found in the slides subfolder.
+///
 fn identify_slides(volume: &mut Volume) -> Result<()> {
     let subfolders = volume.path.join(&volume.keyword).read_dir();
 
@@ -162,7 +156,37 @@ fn identify_slides(volume: &mut Volume) -> Result<()> {
     Ok(())
 }
 
-fn build_syncjobs(volumes: &mut HashMap<String, Volume>) -> Result<Vec<SyncJob>> {
+/// Gather information about the environment.
+///
+/// This function will identify the volumes and slides for each volume in the current system.
+///
+pub fn identify_env(keyword: &str, roots: &[PathBuf]) -> Result<HashMap<String, Volume>> {
+    let mut volumes: HashMap<String, Volume> = HashMap::new();
+
+    // Identify the volumes in each root
+    for root in roots {
+        match identify_volumes(root, keyword) {
+            Ok(v) => volumes.extend(v),
+            Err(e) => log::warn!("{e}"),
+        }
+    }
+
+    // Identify the slides of each volume
+    for (_, volume) in volumes.iter_mut() {
+        match identify_slides(volume) {
+            Ok(_) => {}
+            Err(e) => log::warn!("{e}"),
+        }
+    }
+
+    Ok(volumes)
+}
+
+/// Compose the sync jobs from the volume information.
+///
+/// This function will create the sync jobs based on the identified slides.
+///
+fn build_syncjobs(volumes: &mut HashMap<String, Volume>) -> Result<SyncJobs> {
     let mut syncjobs = Vec::new();
 
     for src_name in volumes.keys() {
@@ -192,10 +216,10 @@ fn build_syncjobs(volumes: &mut HashMap<String, Volume>) -> Result<Vec<SyncJob>>
                         });
                         continue;
                     }
-                    println!("default_route {default_route} not available");
+                    log::info!("default_route {default_route} not available");
                 }
                 _ => {
-                    println!("{dst_name} not available and no default route");
+                    log::info!("{dst_name} not available and no default route");
                 }
             }
         }
@@ -214,25 +238,32 @@ fn build_syncjobs(volumes: &mut HashMap<String, Volume>) -> Result<Vec<SyncJob>>
     Ok(syncjobs)
 }
 
-//TODO: Implement the sync function
-//TODO: Implement the forward function. Figure out how to sort the syncs to minimize the number of operations.
-//TODO: Implement the tidy-up function. In each volume we should process the slide of the volume to move the contents to other places inside the volume
-
-async fn execute_syncjobs(volumes: &HashMap<String, Volume>, syncjobs: &[SyncJob]) -> Result<()> {
+/// Execute the sync jobs.
+///
+/// This function will execute the sync jobs in parallel.
+///
+async fn execute_syncjobs(
+    volumes: &HashMap<String, Volume>,
+    syncjobs: &SyncJobs,
+    dry_run: bool,
+    move_req: &MoveRequest,
+) -> Result<()> {
     let mut handles = Vec::new();
 
     // TODO: Measure the next block
     {
         for syncjob in syncjobs {
-            println!(
+            log::debug!(
                 "Syncing {:?} -{:?}-> {:?}",
-                syncjob.src, syncjob.issue, syncjob.dst
+                syncjob.src,
+                syncjob.issue,
+                syncjob.dst
             );
             let src = volumes[&syncjob.src].slides[&syncjob.issue].path.clone();
             let dst = volumes[&syncjob.dst].slides[&syncjob.issue].path.clone();
-
+            let move_req = move_req.clone();
             let handle = tokio::spawn(async move {
-                if let Err(e) = sync_slide(&src, &dst).await {
+                if let Err(e) = sync_slide(&src, &dst, dry_run, &move_req).await {
                     bail!("Error syncing {:?} -> {:?}: {:?}", src, dst, e);
                 }
                 Ok(())
@@ -248,16 +279,15 @@ async fn execute_syncjobs(volumes: &HashMap<String, Volume>, syncjobs: &[SyncJob
     Ok(())
 }
 
-async fn sync_slide(src: &PathBuf, dst: &PathBuf) -> Result<()> {
-    println!("Syncing slide {:?} -> {:?}", src, dst);
-
-    //TODO: Move this to cli parameters
-    let request = MoveRequest {
-        colision: ColisionPolicy::Fail,
-        safe: false,
-        checked: Some(Algorithm::CRC32),
-        retries: 5,
-    };
+/// Sync the contents of a slide.
+///
+async fn sync_slide(
+    src: &PathBuf,
+    dst: &PathBuf,
+    dry_run: bool,
+    move_req: &MoveRequest,
+) -> Result<()> {
+    log::info!("Syncing slide {:?} -> {:?}", src, dst);
 
     let entries = src.read_dir();
     if entries.is_err() {
@@ -268,22 +298,18 @@ async fn sync_slide(src: &PathBuf, dst: &PathBuf) -> Result<()> {
         let entry_path = entry.path();
         let file_type = entry.file_type();
         if let Ok(file_type) = file_type {
-            if file_type.is_dir() {
-                let dst = dst.join(entry.file_name());
-                // // Create the slide if it does not exist
-                // if !dst.exists() {
-                //     std::fs::create_dir_all(&dst)?;
-                // }
-                fs::sync(&entry_path, &dst, &request).await?;
+            // The slide should only contain directories or config files
+            if !file_type.is_dir() {
+                log::warn!("{} is not a directory", entry_path.display());
                 continue;
             }
-            println!("Warning: {} is not a directory", entry_path.display());
+            let dst = dst.join(entry.file_name());
+            fs::sync(&entry_path, &dst, dry_run, move_req).await?;
         }
     }
 
     Ok(())
 }
-
 
 #[cfg(test)]
 mod tests;

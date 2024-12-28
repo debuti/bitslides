@@ -1,3 +1,5 @@
+use log::LevelFilter;
+use simplelog::{ColorChoice, Config, TermLogger, TerminalMode};
 use std::fs::File;
 use std::io::Result;
 use std::io::Write;
@@ -25,6 +27,33 @@ struct TestFolder {
     folders: &'static [(&'static str, TestFolder)],
     /// A static slice of tuples where each tuple contains the name of the file and a static byte slice representing the file's contents.
     files: &'static [(&'static str, &'static [u8])],
+}
+
+impl std::fmt::Display for TestFolder {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.fmt_with_indent(f, 0)
+    }
+}
+
+impl TestFolder {
+    /// Helper function to format with an indentation level.
+    fn fmt_with_indent(&self, f: &mut std::fmt::Formatter<'_>, indent: usize) -> std::fmt::Result {
+        let indent_str = " ".repeat(indent);
+        for (file_name, file_contents) in self.files {
+            writeln!(
+                f,
+                "{}- {} ({} b)",
+                indent_str,
+                file_name,
+                file_contents.len()
+            )?;
+        }
+        for (folder_name, folder) in self.folders {
+            writeln!(f, "{}- {}", indent_str, folder_name)?;
+            folder.fmt_with_indent(f, indent + 2)?;
+        }
+        Ok(())
+    }
 }
 
 /// Installs a test scenario into a temporary directory and returns a `TestContext` containing the
@@ -89,48 +118,64 @@ fn install_scenario(scenario: &TestFolder, tempdir: tempfile::TempDir) -> Result
 }
 
 pub(crate) fn setup() -> Result<TestContext> {
+    let _ = TermLogger::init(
+        LevelFilter::Trace,
+        Config::default(),
+        TerminalMode::Stderr,
+        ColorChoice::Auto,
+    );
+
     const FOO: TestFolder = TestFolder {
-        folders: &[(
-            "slides",
-            TestFolder {
-                folders: &[
-                    (
-                        "foo",
-                        TestFolder {
-                            folders: &[],
-                            files: &[],
-                        },
-                    ),
-                    (
-                        "bar",
-                        TestFolder {
-                            folders: &[(
-                                "media",
-                                TestFolder {
-                                    folders: &[],
-                                    files: &[("bigfile", &[0u8; 1024 * 1024 * 10])],
-                                },
-                            )],
-                            files: &[
-                                // Broken slide config file
-                                (DEFAULT_SLIDE_CONFIG_FILE, "buffer: 1".as_bytes()),
-                            ],
-                        },
-                    ),
-                    (
-                        "baz",
-                        TestFolder {
-                            folders: &[],
-                            files: &[
-                                // Broken slide config file
-                                (DEFAULT_SLIDE_CONFIG_FILE, "route:".as_bytes()),
-                            ],
-                        },
-                    ),
-                ],
-                files: &[("not_a_slide", "abcdef".as_bytes())],
-            },
-        )],
+        folders: &[
+            (
+                "not_a_slides_folder",
+                TestFolder {
+                    folders: &[],
+                    files: &[],
+                },
+            ),
+            (
+                "slides",
+                TestFolder {
+                    folders: &[
+                        (
+                            "foo",
+                            TestFolder {
+                                folders: &[],
+                                files: &[],
+                            },
+                        ),
+                        (
+                            "bar",
+                            TestFolder {
+                                folders: &[(
+                                    "media",
+                                    TestFolder {
+                                        folders: &[],
+                                        files: &[("bigfile", &[0u8; 1024 * 1024 * 10])],
+                                    },
+                                )],
+                                files: &[
+                                    // Broken slide config file
+                                    (DEFAULT_SLIDE_CONFIG_FILE, "buffer: 1".as_bytes()),
+                                ],
+                            },
+                        ),
+                        (
+                            "baz",
+                            TestFolder {
+                                folders: &[],
+                                files: &[
+                                    // Broken slide config file
+                                    (DEFAULT_SLIDE_CONFIG_FILE, "route:".as_bytes()),
+                                ],
+                            },
+                        ),
+                    ],
+                    files: &[("not_a_slide", "abcdef".as_bytes())],
+                },
+            ),
+        ],
         files: &[("not_a_slide", "abcdef".as_bytes())],
     };
     const BAR: TestFolder = TestFolder {
@@ -141,7 +186,13 @@ pub(crate) fn setup() -> Result<TestContext> {
                     (
                         "foo",
                         TestFolder {
-                            folders: &[],
+                            folders: &[(
+                                "photos",
+                                TestFolder {
+                                    folders: &[],
+                                    files: &[("photo1.jpg", &[0xffu8; 16 * 1024])],
+                                },
+                            )],
                             files: &[],
                         },
                     ),
@@ -286,6 +337,9 @@ pub(crate) fn setup() -> Result<TestContext> {
         files: &[],
     };
     let tempdir = tempfile::tempdir()?;
+
+    // Print the scenario for debugging purposes
+    println!("{}", SCENARIO);
 
     install_scenario(&SCENARIO, tempdir)
 }
