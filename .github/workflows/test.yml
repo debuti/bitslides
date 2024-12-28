@@ -1,0 +1,44 @@
+name: Test
+
+on:
+  pull_request:
+  push:
+    tags:
+      - '**[0-9]+.[0-9]+.[0-9]+*'
+
+jobs:
+  # Job 1: Run Tests
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Common setup
+        uses: ./.github/actions/common
+        with:
+          toolchain: stable
+
+      - name: Run tests
+        run: cargo test --verbose
+
+  # Job 2: Run Coverage
+  coverage:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Common setup
+        uses: ./.github/actions/common
+        with:
+          toolchain: stable
+
+      - name: Install Tarpaulin
+        run: cargo install cargo-tarpaulin
+
+      - name: Run coverage
+        run: cargo tarpaulin --out Xml --fail-under 90
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          files: coverage.xml
+          fail_ci_if_error: true
+          verbose: true
