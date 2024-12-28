@@ -26,3 +26,14 @@ tokio = { version = "1", features = ["full"] }
 # MIT OR Apache-2.0
 pretty_assertions = "1.4.0"
 tempfile = "3.14.0"
+
+# The profile that 'dist' will build with
+[profile.dist]
+inherits = "release"
+lto = "thin"
+
+[package.metadata.wix]
+upgrade-guid = "D4554AC8-4594-4ACC-B132-DDFA5FADEBB1"
+path-guid = "4064CD9A-B945-46A5-BA8F-EC297B42726D"
+license = false
+eula = false
