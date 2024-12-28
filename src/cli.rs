@@ -1,4 +1,4 @@
-use clap::{value_parser, Arg, ArgAction, ArgMatches, Command};
+use clap::{value_parser, Arg, ArgAction, Command};
 use std::path::PathBuf;
 
 const APP_NAME: &str = env!("CARGO_PKG_NAME");
@@ -15,8 +15,9 @@ fn default_config_files() -> Vec<PathBuf> {
     paths
 }
 
-/// Parses command line arguments and returns a `clap::ArgMatches` instance.
-pub fn cli() -> ArgMatches {
+/// Returns a `clap::Command` instance for the CLI.
+///  
+pub fn cli() -> Command {
     Command::new(APP_NAME)
         .version(APP_VERS)
         .about("Synchronizes contents between locations")
@@ -69,5 +70,14 @@ pub fn cli() -> ArgMatches {
                 .value_parser(value_parser!(u8))
                 .default_value("5"),
         )
-        .get_matches()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::cli;
+
+    #[test]
+    fn verify_cli() {
+        cli().debug_assert();
+    }
 }

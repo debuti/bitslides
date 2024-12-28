@@ -51,9 +51,8 @@ fn process_all_configs(config_files: Vec<&PathBuf>) -> Result<Vec<RootsetConfig>
     Ok(result)
 }
 
-#[tokio::main]
-async fn main() -> Result<()> {
-    let matches = cli::cli();
+async fn main_w_args(args: &[String]) -> Result<()> {
+    let matches = cli::cli().get_matches_from(args);
 
     // Get the configuration files
     let config_files = matches
@@ -65,6 +64,7 @@ async fn main() -> Result<()> {
     let retries = matches.get_one::<u8>("retries").unwrap();
 
     // Initialize the logging framework
+    #[cfg(not(test))]
     {
         let verbose = *matches.get_one::<u8>("verbose").unwrap_or(&0);
         // Initialize the logging framework
@@ -100,4 +100,75 @@ async fn main() -> Result<()> {
         retries: *retries,
     })
     .await
+}
+
+#[tokio::main]
+async fn main() -> Result<()> {
+    let args = std::env::args().collect::<Vec<_>>();
+    main_w_args(&args).await
+}
+
+#[cfg(test)]
+mod tests {
+
+    use tempfile::tempdir;
+
+    use crate::main_w_args;
+
+    #[tokio::test]
+    async fn test_main_dummy_environment() {
+        let temp_dir = tempdir().unwrap();
+        let config_file = temp_dir.path().join("config.yml");
+        let config_content = r#"
+# Example configuration file
+keyword: "slides"
+roots:
+- "volume1"
+- "volume2""#;
+        std::fs::write(&config_file, config_content).unwrap();
+
+        let args = vec!["bitslides", "-c", config_file.to_str().unwrap()];
+
+        assert!(main_w_args(
+            args.into_iter()
+                .map(|x| x.to_owned())
+                .collect::<Vec<String>>()
+                .as_slice(),
+        )
+        .await
+        .is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_main_corrupted_config() {
+        let temp_dir = tempdir().unwrap();
+        let config_file = temp_dir.path().join("config.yml");
+        let config_content = r#"Memento mori"#;
+        std::fs::write(&config_file, config_content).unwrap();
+
+        let args = vec!["bitslides", "-c", config_file.to_str().unwrap()];
+
+        assert!(main_w_args(
+            args.into_iter()
+                .map(|x| x.to_owned())
+                .collect::<Vec<String>>()
+                .as_slice(),
+        )
+        .await
+        .is_err());
+    }
+
+    #[tokio::test]
+    async fn test_main_missing_config() {
+        let args = vec!["bitslides", "-c", "not-to-be-found"];
+
+        assert!(main_w_args(
+            args.into_iter()
+                .map(|x| x.to_owned())
+                .collect::<Vec<String>>()
+                .as_slice(),
+        )
+        .await
+        .is_err());
+    }
 }
