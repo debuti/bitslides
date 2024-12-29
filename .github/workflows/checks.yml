@@ -1,4 +1,4 @@
-name: Test
+name: Minimum set of checks
 
 on:
   pull_request:
@@ -9,7 +9,11 @@ on:
 jobs:
   # Job 1: Run Tests
   test:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
 
     steps:
       - name: Checkout code
@@ -73,3 +77,63 @@ jobs:
 
       - name: Run Clippy
         run: cargo clippy -- -D warnings
+
+  # Job 4: Build
+  build:
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        rust: [stable, beta, nightly]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Common setup
+        uses: ./.github/actions/common
+        with:
+          toolchain: ${{ matrix.rust }}
+
+      - name: Build debug
+        run: cargo build --verbose
+
+      - name: Build release
+        run: cargo build --release
+
+  # Job 5: Audit
+  audit:
+    # Disabled since some dependencies are having transitively vulnerable dependencies
+    if: false
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Common setup
+        uses: ./.github/actions/common
+        with:
+          toolchain: stable
+
+      - name: Install Audit Tool
+        run: cargo install cargo-audit
+
+      - name: Run Audit
+        run: cargo audit
+
+  # Job 6: Check Documentation        
+  doc:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Common setup
+        uses: ./.github/actions/common
+        with:
+          toolchain: stable
+
+      - name: Check Documentation
+        run: cargo doc --no-deps --document-private-items
