@@ -90,7 +90,7 @@ async fn main_w_args(args: &[String]) -> Result<()> {
     let rootsets = process_all_configs(config_files.into_iter().collect())?;
 
     slide(GlobalConfig {
-        rootsets: rootsets,
+        rootsets,
         dry_run,
         // FIXME: This should be configurable
         check: Some(Algorithm::BLAKE),
