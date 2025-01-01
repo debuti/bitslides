@@ -1,4 +1,5 @@
 use anyhow::{bail, Result};
+use chrono::prelude::*;
 use config::GlobalConfig;
 use fs::MoveRequest;
 use slide::Slide;
@@ -7,6 +8,11 @@ use std::{
     path::{Path, PathBuf},
 };
 use syncjob::{SyncJob, SyncJobs};
+use tokio::{
+    fs::OpenOptions,
+    io::AsyncWriteExt,
+    sync::mpsc::{self, Sender},
+};
 use volume::Volume;
 
 pub mod config;
@@ -25,6 +31,8 @@ const DEFAULT_SLIDE_CONFIG_FILE: &str = ".slide.yml";
 pub async fn slide(config: GlobalConfig) -> Result<()> {
     log::debug!("Config: {config:#?}");
 
+    let mut tracer = None;
+
     let mut volumes = HashMap::new();
 
     for rootset_config in config.rootsets {
@@ -41,6 +49,32 @@ pub async fn slide(config: GlobalConfig) -> Result<()> {
 
     log::debug!("Sync jobs: {syncjobs:#?}");
 
+    let trace = match config.trace {
+        Some(trace) => {
+            let mut file = OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(trace)
+                .await?;
+            let (tx, mut rx) = mpsc::channel::<Option<String>>(32);
+            // Handle the traces in a separate task
+            tracer = Some(tokio::spawn(async move {
+                while let Some(message) = rx.recv().await {
+                    let message = match message {
+                        Some(m) => {
+                            format!("[{}] {}\n", Local::now().format("%Y-%m-%d %H:%M:%S"), m)
+                        }
+                        None => "".to_owned(),
+                    };
+                    // Best effort
+                    let _ = file.write_all(message.as_bytes()).await;
+                }
+            }));
+            Some(tx)
+        }
+        None => None,
+    };
+
     let move_req = MoveRequest {
         collision: config.collision,
         safe: false,
@@ -48,7 +82,13 @@ pub async fn slide(config: GlobalConfig) -> Result<()> {
         retries: 5,
     };
 
-    execute_syncjobs(&volumes, &syncjobs, config.dry_run, &move_req).await
+    let result = execute_syncjobs(&volumes, &syncjobs, config.dry_run, trace, &move_req).await;
+
+    if let Some(tracer) = tracer {
+        tracer.await?;
+    }
+
+    result
 }
 
 /// Tidy up the volumes.
@@ -246,24 +286,28 @@ async fn execute_syncjobs(
     volumes: &HashMap<String, Volume>,
     syncjobs: &SyncJobs,
     dry_run: bool,
+    tracer: Option<Sender<Option<String>>>,
     move_req: &MoveRequest,
 ) -> Result<()> {
     let mut handles = Vec::new();
 
+    if let Some(tracer) = &tracer {
+        tracer
+            .send(Some("Starting slides sync...".to_owned()))
+            .await?;
+    }
+
     // TODO: Measure the next block
     {
         for syncjob in syncjobs {
-            log::debug!(
-                "Syncing {:?} -{:?}-> {:?}",
-                syncjob.src,
-                syncjob.issue,
-                syncjob.dst
-            );
+            log::debug!("Syncing {:?}", syncjob);
+            let syncjob = syncjob.clone();
             let src = volumes[&syncjob.src].slides[&syncjob.issue].path.clone();
             let dst = volumes[&syncjob.dst].slides[&syncjob.issue].path.clone();
+            let trace = tracer.clone();
             let move_req = move_req.clone();
             let handle = tokio::spawn(async move {
-                if let Err(e) = sync_slide(&src, &dst, dry_run, &move_req).await {
+                if let Err(e) = sync_slide(&syncjob, &src, &dst, dry_run, trace, &move_req).await {
                     bail!("Error syncing {:?} -> {:?}: {:?}", src, dst, e);
                 }
                 Ok(())
@@ -276,18 +320,26 @@ async fn execute_syncjobs(
         }
     }
 
+    if let Some(tracer) = &tracer {
+        tracer.send(None).await?;
+    }
+
     Ok(())
 }
 
 /// Sync the contents of a slide.
 ///
 async fn sync_slide(
+    syncjob: &SyncJob,
     src: &PathBuf,
-    dst: &PathBuf,
+    dst: &Path,
     dry_run: bool,
+    tracer: Option<Sender<Option<String>>>,
     move_req: &MoveRequest,
 ) -> Result<()> {
-    log::info!("Syncing slide {:?} -> {:?}", src, dst);
+    log::info!("Syncing {:?}", syncjob);
+
+    let tracer = tracer.map(|t| (t, syncjob));
 
     let entries = src.read_dir();
     if entries.is_err() {
@@ -304,7 +356,7 @@ async fn sync_slide(
                 continue;
             }
             let dst = dst.join(entry.file_name());
-            fs::sync(&entry_path, &dst, dry_run, move_req).await?;
+            fs::sync(&entry_path, &dst, dry_run, &tracer, move_req).await?;
         }
     }
 

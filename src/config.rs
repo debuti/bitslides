@@ -8,6 +8,7 @@ pub const DEFAULT_KEYWORD: &str = "Slides";
 pub struct Config {
     pub keyword: Option<String>,
     pub roots: Vec<String>,
+    pub trace: Option<String>,
 }
 
 pub fn read_config<P>(file_path: P) -> Result<Config>

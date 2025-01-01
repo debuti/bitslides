@@ -4,6 +4,7 @@ use std::{collections::HashMap, path::PathBuf};
 
 #[derive(Debug)]
 pub struct Volume {
+    #[cfg(any())]
     /// Name of the volume
     pub name: String,
     /// Keyword used for the slides subfolder
@@ -15,9 +16,9 @@ pub struct Volume {
 }
 
 impl Volume {
-    pub fn new(name: String, keyword: &str, path: PathBuf) -> Self {
+    pub fn new(_name: String, keyword: &str, path: PathBuf) -> Self {
         Self {
-            name,
+            //name,
             keyword: keyword.to_owned(),
             path,
             slides: HashMap::new(),
@@ -37,6 +38,7 @@ impl Volume {
     }
 }
 
+#[cfg(any())]
 impl std::fmt::Display for Volume {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.name)?;

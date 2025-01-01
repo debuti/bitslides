@@ -48,7 +48,9 @@ async fn test_copy_directory() {
         writeln!(src_file, "Hello, world!").unwrap();
 
         // Perform copy
-        sync(&src_dir, &dest_dir, false, request).await.unwrap();
+        sync(&src_dir, &dest_dir, false, &None, request)
+            .await
+            .unwrap();
         println!("---");
 
         // Verify destination directory structure
@@ -76,6 +78,7 @@ async fn test_copy_empty_directory() {
         &src_dir,
         &dest_dir,
         false,
+        &None,
         &MoveRequest {
             collision: CollisionPolicy::Fail,
             safe: false,
@@ -108,6 +111,7 @@ async fn test_copy_nested_directories() {
         &src_dir,
         &dest_dir,
         false,
+        &None,
         &MoveRequest {
             collision: CollisionPolicy::Fail,
             safe: false,
@@ -424,3 +428,5 @@ async fn test_move_file_check_failed() {
     );
     assert!(!dst_file.exists());
 }
+
+//TODO: Check that after moving a file inside a folder and leaving the folder empty, the folder is removed

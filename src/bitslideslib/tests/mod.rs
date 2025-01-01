@@ -79,10 +79,10 @@ fn test_identify_env() {
         assert!(volumes.contains_key(volume));
 
         // Check: The volume should contain 4 slides
-        assert_eq!(volumes[volume].slides.len(), 4);
+        assert_eq!(volumes[volume].slides.len(), 5);
 
-        // Check: The volume should contain the slides "foo", "bar", "baz" and "qux"
-        for slide in ["foo", "bar", "baz", "qux"] {
+        // Check: The volume should contain the following slides
+        for slide in ["foo", "bar", "baz", "qux", "quux"] {
             assert!(volumes[volume].slides.contains_key(slide));
         }
     }
@@ -136,6 +136,8 @@ async fn test_execute_syncjobs() {
     // Prerequisite: Build the sync jobs between the volumes
     let syncjobs = build_syncjobs(&mut volumes).unwrap();
 
+    let (tx, mut rx) = tokio::sync::mpsc::channel(32);
+
     // Action: Execute the sync jobs
     {
         let move_req = MoveRequest {
@@ -144,9 +146,28 @@ async fn test_execute_syncjobs() {
             check: None,
             retries: 5,
         };
-        execute_syncjobs(&volumes, &syncjobs, false, &move_req)
+        execute_syncjobs(&volumes, &syncjobs, false, Some(tx), &move_req)
             .await
             .unwrap();
+    }
+
+    // Check: The tracer has traced some info
+    {
+        let mut traces = Vec::new();
+        while let Some(info) = rx.recv().await {
+            traces.push(info);
+        }
+
+        assert!(traces.contains(&Some("Starting slides sync...".to_owned())));
+        for needle in &[
+            "[foo -bar-> bar] MKDIR",
+            "[bar -foo-> foo] MKDIR",
+            "[foo -bar-> bar] CP",
+            "[bar -foo-> foo] CP",
+        ] {
+            assert!(traces.iter().any(|x| x.as_ref().unwrap().contains(needle)));
+        }
+        assert!(traces.contains(&None));
     }
 
     // Check: The slides should be synchronized correctly
@@ -231,7 +252,7 @@ async fn test_execute_syncjobs_with_missing_source() {
             check: None,
             retries: 5,
         };
-        execute_syncjobs(&volumes, &syncjobs, false, &move_req).await
+        execute_syncjobs(&volumes, &syncjobs, false, None, &move_req).await
     };
 
     // Verify that the sync jobs failed due to the missing source

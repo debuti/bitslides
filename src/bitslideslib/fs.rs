@@ -1,7 +1,11 @@
 use anyhow::{bail, Result};
 use std::path::{Path, PathBuf};
+use tokio::sync::mpsc::Sender;
 
-use super::config::{Algorithm, CollisionPolicy};
+use super::{
+    config::{Algorithm, CollisionPolicy},
+    syncjob::SyncJob,
+};
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct MoveRequest {
@@ -21,6 +25,7 @@ pub async fn sync<U: AsRef<Path>, V: AsRef<Path>>(
     from: U,
     to: V,
     dry_run: bool,
+    tracer: &Option<(Sender<Option<String>>, &SyncJob)>,
     request: &MoveRequest,
 ) -> Result<()> {
     let from = PathBuf::from(from.as_ref());
@@ -53,6 +58,13 @@ pub async fn sync<U: AsRef<Path>, V: AsRef<Path>>(
         // Check if the destination exists, otherwise create it
         if std::fs::metadata(&dst).is_err() {
             log::info!("Mkdir: {:?}", dst);
+
+            if let Some((tracer, syncjob)) = &tracer {
+                tracer
+                    .send(Some(format!("[{:?}] MKDIR {:?}", syncjob, dst,)))
+                    .await?;
+            }
+
             if !dry_run {
                 std::fs::create_dir_all(&dst)?;
             }
@@ -73,6 +85,11 @@ pub async fn sync<U: AsRef<Path>, V: AsRef<Path>>(
             match src.file_name() {
                 Some(filename) => {
                     log::info!("Copy: {:?} -> {:?}", &src, &dst);
+                    if let Some((tracer, syncjob)) = &tracer {
+                        tracer
+                            .send(Some(format!("[{:?}] CP {:?} -> {:?}", syncjob, src, dst,)))
+                            .await?;
+                    }
                     let dst = dst.join(filename);
                     if !dry_run {
                         move_file(&src, &dst, request, checksums::hash_file).await?;

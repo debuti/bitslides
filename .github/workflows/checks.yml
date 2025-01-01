@@ -96,10 +96,12 @@ jobs:
           toolchain: ${{ matrix.rust }}
 
       - name: Build debug
-        run: cargo build --verbose
+        run: |
+          RUSTFLAGS="-D warnings" cargo build --verbose
 
       - name: Build release
-        run: cargo build --release
+        run: |
+          RUSTFLAGS="-D warnings" cargo build --release
 
   # Job 5: Audit
   audit:

@@ -1,18 +1,53 @@
-use anyhow::{anyhow, bail, Result};
+use anyhow::{bail, Result};
 use bitslides::{slide, Algorithm, CollisionPolicy, GlobalConfig, RootsetConfig};
+use chrono::prelude::*;
 use config::DEFAULT_KEYWORD;
-use log::LevelFilter;
-use simplelog::{ColorChoice, Config, TermLogger, TerminalMode};
 use std::path::PathBuf;
+
+#[cfg(not(test))]
+use anyhow::anyhow;
+#[cfg(not(test))]
+use log::LevelFilter;
+#[cfg(not(test))]
+use simplelog::{ColorChoice, Config, TermLogger, TerminalMode};
 
 mod cli;
 mod config;
 
+/// Generates the trace path from the given format.
+///
+fn generate_trace_path(trace_fmt: &str) -> Option<PathBuf> {
+    let now: DateTime<Local> = Local::now();
+    let trace = PathBuf::from(
+        trace_fmt
+            .replace("%Y", &format!("{:04}", &now.year()))
+            .replace("%M", &format!("{:02}", &now.month()))
+            .replace("%d", &format!("{:02}", &now.day()))
+            .replace("%H", &format!("{:02}", &now.hour()))
+            .replace("%M", &format!("{:02}", &now.minute()))
+            .replace("%S", &format!("{:02}", &now.second())),
+    );
+    let trace = std::path::absolute(trace).ok()?;
+
+    if !trace.exists() {
+        let trace_parent = trace.parent().unwrap();
+        if !trace_parent.exists() {
+            log::error!("{trace:?}: Neither trace or parent folder does exist");
+            return None;
+        }
+    }
+
+    Some(trace)
+}
+
 /// Processes all configuration files and returns a list of `RootsetConfig` instances.
 ///
-fn process_all_configs(config_files: Vec<&PathBuf>) -> Result<Vec<RootsetConfig>> {
+fn process_all_configs(
+    config_files: Vec<&PathBuf>,
+) -> Result<(Vec<RootsetConfig>, Option<PathBuf>)> {
     let mut success = false;
-    let mut result = Vec::new();
+    let mut rootsets = Vec::new();
+    let mut trace = None;
 
     for config_path in config_files {
         log::info!("Loading configuration from: {config_path:?}...");
@@ -31,7 +66,11 @@ fn process_all_configs(config_files: Vec<&PathBuf>) -> Result<Vec<RootsetConfig>
                     })
                     .collect::<Vec<PathBuf>>();
 
-                result.push(RootsetConfig { keyword, roots });
+                rootsets.push(RootsetConfig { keyword, roots });
+
+                if let Some(trace_fmt) = config.trace {
+                    trace = generate_trace_path(&trace_fmt);
+                }
             } else {
                 log::error!("{config_path:?}: Invalid config format");
                 continue;
@@ -48,7 +87,7 @@ fn process_all_configs(config_files: Vec<&PathBuf>) -> Result<Vec<RootsetConfig>
         bail!("No valid configuration file found");
     }
 
-    Ok(result)
+    Ok((rootsets, trace))
 }
 
 async fn main_w_args(args: &[String]) -> Result<()> {
@@ -87,11 +126,12 @@ async fn main_w_args(args: &[String]) -> Result<()> {
         }
     }
 
-    let rootsets = process_all_configs(config_files.into_iter().collect())?;
+    let (rootsets, trace) = process_all_configs(config_files.into_iter().collect())?;
 
     slide(GlobalConfig {
         rootsets,
         dry_run,
+        trace,
         // FIXME: This should be configurable
         check: Some(Algorithm::BLAKE),
         // FIXME: This should be configurables
@@ -110,7 +150,6 @@ async fn main() -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-
     use tempfile::tempdir;
 
     use crate::main_w_args;
@@ -119,12 +158,17 @@ mod tests {
     async fn test_main_dummy_environment() {
         let temp_dir = tempdir().unwrap();
         let config_file = temp_dir.path().join("config.yml");
-        let config_content = r#"
+        let config_content = format!(
+            r#"
 # Example configuration file
 keyword: "slides"
 roots:
 - "volume1"
-- "volume2""#;
+- "volume2"
+trace: "{}//bitslides.%Y%M%d%H%M%S.log"
+"#,
+            temp_dir.path().to_str().unwrap()
+        );
         std::fs::write(&config_file, config_content).unwrap();
 
         let args = vec!["bitslides", "-c", config_file.to_str().unwrap()];
@@ -170,5 +214,34 @@ roots:
         )
         .await
         .is_err());
+    }
+
+    #[tokio::test]
+    async fn test_main_wrong_trace_config() {
+        let temp_dir = tempdir().unwrap();
+        let config_file = temp_dir.path().join("config.yml");
+        let config_content = format!(
+            r#"
+# Example configuration file
+keyword: "slides"
+roots:
+- "volume1"
+- "volume2"
+trace: "{}/non-existing-folder/bitslides.log"
+"#,
+            temp_dir.path().to_str().unwrap()
+        );
+        std::fs::write(&config_file, config_content).unwrap();
+
+        let args = vec!["bitslides", "-c", config_file.to_str().unwrap()];
+
+        assert!(main_w_args(
+            args.into_iter()
+                .map(|x| x.to_owned())
+                .collect::<Vec<String>>()
+                .as_slice(),
+        )
+        .await
+        .is_ok());
     }
 }

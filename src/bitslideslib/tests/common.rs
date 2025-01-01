@@ -249,6 +249,13 @@ pub(crate) fn setup() -> Result<TestContext> {
                             files: &[(DEFAULT_SLIDE_CONFIG_FILE, "route: bar".as_bytes())],
                         },
                     ),
+                    (
+                        "quux",
+                        TestFolder {
+                            folders: &[],
+                            files: &[],
+                        },
+                    ),
                 ],
                 files: &[],
             },
@@ -286,6 +293,16 @@ pub(crate) fn setup() -> Result<TestContext> {
                         TestFolder {
                             folders: &[],
                             files: &[],
+                        },
+                    ),
+                    (
+                        "quux",
+                        TestFolder {
+                            folders: &[],
+                            files: &[(
+                                DEFAULT_SLIDE_CONFIG_FILE,
+                                "route: not-found-lol".as_bytes(),
+                            )],
                         },
                     ),
                 ],

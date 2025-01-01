@@ -30,6 +30,8 @@ pub struct GlobalConfig {
     pub rootsets: Vec<RootsetConfig>,
     /// If true, do not perform any filesystem operation
     pub dry_run: bool,
+    /// If provided, the path to a file where to write the trace
+    pub trace: Option<PathBuf>,
     /// If provided, the algorithm to use for checksumming
     pub check: Option<Algorithm>,
     /// What to do in case of a file collision
