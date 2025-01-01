@@ -165,7 +165,7 @@ keyword: "slides"
 roots:
 - "volume1"
 - "volume2"
-trace: "{}//bitslides.%Y%M%d%H%M%S.log"
+trace: "{}/bitslides.%Y%M%d%H%M%S.log"
 "#,
             temp_dir.path().to_str().unwrap()
         );
