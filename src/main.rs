@@ -53,32 +53,35 @@ fn process_all_configs(
         log::info!("Loading configuration from: {config_path:?}...");
 
         if config_path.exists() {
-            if let Ok(config) = config::read_config(config_path.to_str().unwrap()) {
-                let keyword = config.keyword.unwrap_or(DEFAULT_KEYWORD.to_owned());
-                let roots = config
-                    .roots
-                    .into_iter()
-                    .map(|x| {
-                        if x.contains("$") {
-                            unimplemented!("Environment variables not supported yet");
-                        }
-                        PathBuf::from(x)
-                    })
-                    .collect::<Vec<PathBuf>>();
+            match config::read_config(config_path.to_str().unwrap()) {
+                Ok(config) => {
+                    let keyword = config.keyword.unwrap_or(DEFAULT_KEYWORD.to_owned());
+                    let roots = config
+                        .roots
+                        .into_iter()
+                        .map(|x| {
+                            if x.contains("$") {
+                                unimplemented!("Environment variables not supported yet");
+                            }
+                            PathBuf::from(x)
+                        })
+                        .collect::<Vec<PathBuf>>();
 
-                rootsets.push(RootsetConfig { keyword, roots });
+                    rootsets.push(RootsetConfig { keyword, roots });
 
-                if let Some(trace_fmt) = config.trace {
-                    trace = generate_trace_path(&trace_fmt);
+                    if let Some(trace_fmt) = config.trace {
+                        trace = generate_trace_path(&trace_fmt);
+                    }
                 }
-            } else {
-                log::error!("{config_path:?}: Invalid config format");
-                continue;
-            }
+                Err(e) => {
+                    log::error!("{config_path:?}: Invalid config format: {e}");
+                    continue;
+                }
+            };
         } else {
             log::error!("{config_path:?}: Config not found");
             continue;
-        };
+        }
 
         success = true;
     }
@@ -157,17 +160,19 @@ mod tests {
     #[tokio::test]
     async fn test_main_dummy_environment() {
         let temp_dir = tempdir().unwrap();
+        // Use forward slashes in Windows
+        let temp_dir_str = temp_dir.path().to_str().unwrap().replace("\\", "/");
         let config_file = temp_dir.path().join("config.yml");
         let config_content = format!(
             r#"
 # Example configuration file
 keyword: "slides"
 roots:
-- "volume1"
-- "volume2"
+- "root0"
+- "root1"
 trace: "{}/bitslides.%Y%M%d%H%M%S.log"
 "#,
-            temp_dir.path().to_str().unwrap()
+            temp_dir_str
         );
         std::fs::write(&config_file, config_content).unwrap();
 
@@ -219,29 +224,31 @@ trace: "{}/bitslides.%Y%M%d%H%M%S.log"
     #[tokio::test]
     async fn test_main_wrong_trace_config() {
         let temp_dir = tempdir().unwrap();
+        let temp_dir_str = temp_dir.path().to_str().unwrap().replace("\\", "/");
         let config_file = temp_dir.path().join("config.yml");
         let config_content = format!(
             r#"
 # Example configuration file
 keyword: "slides"
 roots:
-- "volume1"
-- "volume2"
+- "root0"
+- "root1"
 trace: "{}/non-existing-folder/bitslides.log"
 "#,
-            temp_dir.path().to_str().unwrap()
+            temp_dir_str
         );
         std::fs::write(&config_file, config_content).unwrap();
 
         let args = vec!["bitslides", "-c", config_file.to_str().unwrap()];
 
-        assert!(main_w_args(
+        let result = main_w_args(
             args.into_iter()
                 .map(|x| x.to_owned())
                 .collect::<Vec<String>>()
                 .as_slice(),
         )
-        .await
-        .is_ok());
+        .await;
+
+        assert!(result.is_ok(), "Failed with: {}", result.unwrap_err());
     }
 }
