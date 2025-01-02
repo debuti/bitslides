@@ -5,7 +5,6 @@ use fs::MoveRequest;
 use slide::Slide;
 use std::{
     collections::HashMap,
-    ffi::CStr,
     path::{Path, PathBuf},
 };
 use syncjob::{SyncJob, SyncJobs};
@@ -15,6 +14,9 @@ use tokio::{
     sync::mpsc::{self, Sender},
 };
 use volume::Volume;
+
+#[cfg(target_os = "windows")]
+use std::ffi::CStr;
 
 pub mod config;
 mod fs;

@@ -62,7 +62,9 @@ impl Volume {
                             )
                         };
                         if name.is_ok() {
-                            let name = String::from_utf16_lossy(&volume_name).trim_end_matches('\0').to_owned();
+                            let name = String::from_utf16_lossy(&volume_name)
+                                .trim_end_matches('\0')
+                                .to_owned();
                             return Some(Self::new(name, keyword, maybe_volume.to_owned()));
                         }
                     }
