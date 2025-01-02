@@ -31,25 +31,44 @@ impl Volume {
     pub fn from_path(maybe_volume: PathBuf, keyword: &str) -> Option<Self> {
         let slides_path = maybe_volume.join(keyword);
         if slides_path.exists() {
+            // Try to retrieve the configured name first
+            let volume_conf =
+                config::read_volume_config(slides_path.join(DEFAULT_VOLUME_CONFIG_FILE));
+            if let Ok(v) = volume_conf {
+                if let Some(n) = v.name {
+                    return Some(Self::new(n, keyword, maybe_volume.to_owned()));
+                }
+            }
+
+            // Otherwise try to retrieve it from the OS context
             match maybe_volume.file_name() {
                 Some(name) => {
                     let name = name.to_string_lossy().to_string();
                     return Some(Self::new(name, keyword, maybe_volume.to_owned()));
                 }
                 None => {
-                    let volume_conf =
-                        config::read_volume_config(slides_path.join(DEFAULT_VOLUME_CONFIG_FILE));
-                    if let Ok(v) = volume_conf {
-                        if let Some(n) = v.name {
-                            return Some(Self::new(n, keyword, maybe_volume.to_owned()));
+                    if cfg!(windows) {
+                        const VOLUME_NAME_MAX_LEN: usize = 256;
+                        let mut volume_name = [0u16; VOLUME_NAME_MAX_LEN];
+                        let name = unsafe {
+                            windows::Win32::Storage::FileSystem::GetVolumeInformationW(
+                                &windows::core::HSTRING::from(maybe_volume.as_os_str()),
+                                Some(&mut volume_name),
+                                None,
+                                None,
+                                None,
+                                None,
+                            )
+                        };
+                        if name.is_ok() {
+                            let name = String::from_utf16_lossy(&volume_name);
+                            return Some(Self::new(name, keyword, maybe_volume.to_owned()));
                         }
                     }
-
-                    log::warn!(
-                        "A volume has been identified at {maybe_volume:?} but it is nameless"
-                    );
                 }
             };
+
+            log::warn!("A volume has been identified at {maybe_volume:?} but it is nameless");
         }
         None
     }
