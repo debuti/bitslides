@@ -5,6 +5,7 @@ use fs::MoveRequest;
 use slide::Slide;
 use std::{
     collections::HashMap,
+    ffi::CStr,
     path::{Path, PathBuf},
 };
 use syncjob::{SyncJob, SyncJobs};
@@ -135,18 +136,11 @@ fn identify_volumes(root: &Path, keyword: &str) -> Result<HashMap<String, Volume
 
     // Analyze the contents of the root folder
     for entry in entries?.flatten() {
-        let entry_path = entry.path();
         let file_type = entry.file_type();
         if let Ok(file_type) = file_type {
             if file_type.is_dir() {
-                let slides_path = entry_path.join(keyword);
-                if slides_path.exists() {
-                    let name = entry_path
-                        .file_name()
-                        .unwrap()
-                        .to_string_lossy()
-                        .to_string();
-                    volumes.insert(name.clone(), Volume::new(name, keyword, entry_path));
+                if let Some(volume) = Volume::from_path(entry.path(), keyword) {
+                    volumes.insert(volume.name.clone(), volume);
                 }
             }
         }
@@ -203,11 +197,46 @@ fn identify_slides(volume: &mut Volume) -> Result<()> {
 pub fn identify_env(keyword: &str, roots: &[PathBuf]) -> Result<HashMap<String, Volume>> {
     let mut volumes: HashMap<String, Volume> = HashMap::new();
 
-    // Identify the volumes in each root
-    for root in roots {
-        match identify_volumes(root, keyword) {
-            Ok(v) => volumes.extend(v),
-            Err(e) => log::warn!("{e}"),
+    // Identify volumes
+    {
+        // Identify the volumes in each root
+        for root in roots {
+            match identify_volumes(root, keyword) {
+                Ok(v) => volumes.extend(v),
+                Err(e) => log::warn!("{e}"),
+            }
+        }
+
+        // Under Windows we may have volumes as drives (e. C:, D:, etc)
+        if cfg!(windows) {
+            // Retrieve the drives using the windows api
+            let drives = {
+                let mut result = Vec::new();
+                const MAX_BUF: usize = 1024;
+                let mut buf = [0u8; MAX_BUF];
+                let length = unsafe {
+                    windows::Win32::Storage::FileSystem::GetLogicalDriveStringsA(Some(&mut buf))
+                } as usize;
+                if length > MAX_BUF {
+                    log::error!(
+                        "The hardcoded buffer is not big enough to retrieve all logical drives"
+                    );
+                }
+                let mut ptr = 0;
+                while ptr < length {
+                    let drive = CStr::from_bytes_until_nul(&buf[ptr..]).unwrap();
+                    let offset_to_next = 1 + drive.count_bytes();
+                    ptr += offset_to_next;
+                    result.push(PathBuf::from(drive.to_str().unwrap()));
+                }
+                result
+            };
+
+            for drive in drives {
+                if let Some(volume) = Volume::from_path(drive, keyword) {
+                    volumes.insert(volume.name.clone(), volume);
+                }
+            }
         }
     }
 

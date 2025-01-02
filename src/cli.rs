@@ -6,10 +6,13 @@ const APP_VERS: &str = env!("CARGO_PKG_VERSION");
 
 /// Returns a list of default configuration files.
 fn default_config_files() -> Vec<PathBuf> {
-    let mut paths = vec![PathBuf::from("/etc/synchers/default.conf")];
+    let mut paths = vec![
+        PathBuf::from("/etc/bitslides/default.conf"),
+        PathBuf::from("C:\\bitslides\\default.conf"),
+    ];
 
     if let Some(home_dir) = dirs::home_dir() {
-        paths.push(home_dir.join(".synchers/default.conf"));
+        paths.push(home_dir.join(".bitslides").join("default.conf"));
     }
 
     paths

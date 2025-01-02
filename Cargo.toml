@@ -23,6 +23,10 @@ simplelog = "0.12.2"
 checksums = "0.9.1"
 tokio = { version = "1", features = ["full"] }
 
+[target.'cfg(target_os = "windows")'.dependencies]
+# MIT OR Apache-2.0
+windows = { version = "0.58", features = ["Win32_Storage_FileSystem"] }
+
 [dev-dependencies]
 # MIT OR Apache-2.0
 pretty_assertions = "1.4.0"

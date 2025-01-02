@@ -21,7 +21,7 @@ fn generate_trace_path(trace_fmt: &str) -> Option<PathBuf> {
     let trace = PathBuf::from(
         trace_fmt
             .replace("%Y", &format!("{:04}", &now.year()))
-            .replace("%M", &format!("{:02}", &now.month()))
+            .replace("%m", &format!("{:02}", &now.month()))
             .replace("%d", &format!("{:02}", &now.day()))
             .replace("%H", &format!("{:02}", &now.hour()))
             .replace("%M", &format!("{:02}", &now.minute()))

@@ -42,7 +42,21 @@ pub struct GlobalConfig {
     pub retries: u8,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
+pub struct VolumeConfig {
+    pub name: Option<String>,
+}
+
+pub fn read_volume_config<P>(file_path: P) -> Result<VolumeConfig>
+where
+    P: AsRef<Path>,
+{
+    let file_content = std::fs::read_to_string(file_path)?;
+    let config = serde_yaml::from_str(&file_content)?;
+    Ok(config)
+}
+
+#[derive(Deserialize, Debug)]
 pub struct SlideConfig {
     pub route: Option<String>,
 }

@@ -1,10 +1,13 @@
+use crate::bitslideslib::config;
+
 use super::slide::Slide;
 use anyhow::Result;
 use std::{collections::HashMap, path::PathBuf};
 
+const DEFAULT_VOLUME_CONFIG_FILE: &str = ".volume.yml";
+
 #[derive(Debug)]
 pub struct Volume {
-    #[cfg(any())]
     /// Name of the volume
     pub name: String,
     /// Keyword used for the slides subfolder
@@ -16,13 +19,39 @@ pub struct Volume {
 }
 
 impl Volume {
-    pub fn new(_name: String, keyword: &str, path: PathBuf) -> Self {
+    pub fn new(name: String, keyword: &str, path: PathBuf) -> Self {
         Self {
-            //name,
+            name,
             keyword: keyword.to_owned(),
             path,
             slides: HashMap::new(),
         }
+    }
+
+    pub fn from_path(maybe_volume: PathBuf, keyword: &str) -> Option<Self> {
+        let slides_path = maybe_volume.join(keyword);
+        if slides_path.exists() {
+            match maybe_volume.file_name() {
+                Some(name) => {
+                    let name = name.to_string_lossy().to_string();
+                    return Some(Self::new(name, keyword, maybe_volume.to_owned()));
+                }
+                None => {
+                    let volume_conf =
+                        config::read_volume_config(slides_path.join(DEFAULT_VOLUME_CONFIG_FILE));
+                    if let Ok(v) = volume_conf {
+                        if let Some(n) = v.name {
+                            return Some(Self::new(n, keyword, maybe_volume.to_owned()));
+                        }
+                    }
+
+                    log::warn!(
+                        "A volume has been identified at {maybe_volume:?} but it is nameless"
+                    );
+                }
+            };
+        }
+        None
     }
 
     pub fn add_slide(&mut self, slide: Slide) {
