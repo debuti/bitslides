@@ -47,7 +47,8 @@ impl Volume {
                     return Some(Self::new(name, keyword, maybe_volume.to_owned()));
                 }
                 None => {
-                    if cfg!(windows) {
+                    #[cfg(target_os = "windows")]
+                    {
                         const VOLUME_NAME_MAX_LEN: usize = 256;
                         let mut volume_name = [0u16; VOLUME_NAME_MAX_LEN];
                         let name = unsafe {
@@ -61,7 +62,7 @@ impl Volume {
                             )
                         };
                         if name.is_ok() {
-                            let name = String::from_utf16_lossy(&volume_name);
+                            let name = String::from_utf16_lossy(&volume_name).trim_end_matches('\0').to_owned();
                             return Some(Self::new(name, keyword, maybe_volume.to_owned()));
                         }
                     }

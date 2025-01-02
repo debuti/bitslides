@@ -208,7 +208,8 @@ pub fn identify_env(keyword: &str, roots: &[PathBuf]) -> Result<HashMap<String, 
         }
 
         // Under Windows we may have volumes as drives (e. C:, D:, etc)
-        if cfg!(windows) {
+        #[cfg(target_os = "windows")]
+        {
             // Retrieve the drives using the windows api
             let drives = {
                 let mut result = Vec::new();
