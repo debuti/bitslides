@@ -7,7 +7,32 @@ on:
       - '**[0-9]+.[0-9]+.[0-9]+*'
 
 jobs:
-  # Job 1: Run Tests
+  # Job 1: Build
+  build:
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        rust: [stable, beta, nightly]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Common setup
+        uses: ./.github/actions/common
+        with:
+          toolchain: ${{ matrix.rust }}
+
+      - name: Build debug
+        run: |
+          RUSTFLAGS="-D warnings" cargo build --verbose
+
+      - name: Build release
+        run: |
+          RUSTFLAGS="-D warnings" cargo build --release
+
+  # Job 2: Run Tests
   test:
     runs-on: ${{ matrix.os }}
 
@@ -27,7 +52,7 @@ jobs:
       - name: Run tests
         run: cargo test --verbose -- --show-output
 
-  # Job 2: Run Coverage
+  # Job 3: Run Coverage
   coverage:
     runs-on: ubuntu-latest
 
@@ -54,7 +79,7 @@ jobs:
           fail_ci_if_error: true
           verbose: true
 
-  # Job 3: Check Formatting and Lint
+  # Job 4: Check Formatting and Lint
   lint:
     runs-on: ubuntu-latest
 
@@ -77,31 +102,6 @@ jobs:
 
       - name: Run Clippy
         run: cargo clippy -- -D warnings
-
-  # Job 4: Build
-  build:
-    runs-on: ubuntu-latest
-
-    strategy:
-      matrix:
-        rust: [stable, beta, nightly]
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-
-      - name: Common setup
-        uses: ./.github/actions/common
-        with:
-          toolchain: ${{ matrix.rust }}
-
-      - name: Build debug
-        run: |
-          RUSTFLAGS="-D warnings" cargo build --verbose
-
-      - name: Build release
-        run: |
-          RUSTFLAGS="-D warnings" cargo build --release
 
   # Job 5: Audit
   audit:

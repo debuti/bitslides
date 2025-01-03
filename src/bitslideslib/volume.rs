@@ -41,6 +41,7 @@ impl Volume {
             }
 
             // Otherwise try to retrieve it from the OS context
+            #[allow(clippy::single_match)]
             match maybe_volume.file_name() {
                 Some(name) => {
                     let name = name.to_string_lossy().to_string();
