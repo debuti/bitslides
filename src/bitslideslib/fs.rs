@@ -8,7 +8,7 @@ use super::{
 };
 
 /// Move request parameters.
-/// 
+///
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct MoveRequest {
     /// What to do in case of a file collision

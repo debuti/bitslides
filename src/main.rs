@@ -94,9 +94,9 @@ fn process_all_configs(
 }
 
 /// Main function with arguments.
-/// 
+///
 /// This function gathers information and calls the bitslideslib fn.
-/// 
+///
 async fn main_w_args(args: &[String]) -> Result<()> {
     let matches = cli::cli().get_matches_from(args);
 
@@ -150,7 +150,7 @@ async fn main_w_args(args: &[String]) -> Result<()> {
 }
 
 /// Entry point of the application.
-/// 
+///
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = std::env::args().collect::<Vec<_>>();

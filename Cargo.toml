@@ -1,12 +1,12 @@
 [package]
 name = "bitslides"
-version = "0.1.0"
+version = "0.0.0"
 edition = "2021"
 authors = ["Borja García <debuti@gmail.com>"]
 description = "Synchronize volumes on the background"
 readme = "README.md"
 repository = "https://github.com/debuti/bitslides"
-license = "GPLv3"
+license = "GPL-3.0-only"
 
 [dependencies]
 # MIT OR Apache-2.0

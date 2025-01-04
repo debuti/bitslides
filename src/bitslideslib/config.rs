@@ -5,9 +5,9 @@ use std::path::{Path, PathBuf};
 pub use checksums::Algorithm;
 
 /// Set of roots
-/// 
+///
 /// This configuration is used to define a set of root paths that will contain volumes, along with the keyword each root will use.
-/// 
+///
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct RootsetConfig {
     /// Keyword to use for this rootset
@@ -17,7 +17,7 @@ pub struct RootsetConfig {
 }
 
 /// Policy to apply in case of a file collision
-/// 
+///
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub enum CollisionPolicy {
     /// Overwrite the destination file
@@ -31,9 +31,9 @@ pub enum CollisionPolicy {
 }
 
 /// Global configuration
-/// 
+///
 /// This configuration is used to define the global settings of the library.
-/// 
+///
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct GlobalConfig {
     /// List of rootset configurations
@@ -53,9 +53,9 @@ pub struct GlobalConfig {
 }
 
 /// Volume configuration
-/// 
+///
 /// This configuration is used to define the settings of a volume.
-/// 
+///
 #[derive(Deserialize, Debug)]
 pub struct VolumeConfig {
     /// Optional name of the volume. If provided it will take precedence over the OS context.
@@ -63,7 +63,7 @@ pub struct VolumeConfig {
 }
 
 /// Read a volume configuration file
-/// 
+///
 pub fn read_volume_config<P>(file_path: P) -> Result<VolumeConfig>
 where
     P: AsRef<Path>,
@@ -74,9 +74,9 @@ where
 }
 
 /// Slide configuration
-/// 
+///
 /// This configuration is used to define the settings of a slide.
-/// 
+///
 #[derive(Deserialize, Debug)]
 pub struct SlideConfig {
     /// Default route for the slide.
@@ -84,7 +84,7 @@ pub struct SlideConfig {
 }
 
 /// Read a slide configuration file
-/// 
+///
 pub fn read_slide_config<P>(file_path: P) -> Result<SlideConfig>
 where
     P: AsRef<Path>,
