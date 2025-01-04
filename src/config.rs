@@ -4,6 +4,8 @@ use std::path::Path;
 
 pub const DEFAULT_KEYWORD: &str = "Slides";
 
+/// Configuration file representation.
+/// 
 #[derive(Deserialize)]
 pub struct Config {
     pub keyword: Option<String>,
@@ -11,6 +13,8 @@ pub struct Config {
     pub trace: Option<String>,
 }
 
+/// Reads a configuration file.
+/// 
 pub fn read_config<P>(file_path: P) -> Result<Config>
 where
     P: AsRef<Path>,

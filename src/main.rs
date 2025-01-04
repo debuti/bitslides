@@ -93,6 +93,10 @@ fn process_all_configs(
     Ok((rootsets, trace))
 }
 
+/// Main function with arguments.
+/// 
+/// This function gathers information and calls the bitslideslib fn.
+/// 
 async fn main_w_args(args: &[String]) -> Result<()> {
     let matches = cli::cli().get_matches_from(args);
 
@@ -137,7 +141,7 @@ async fn main_w_args(args: &[String]) -> Result<()> {
         trace,
         // FIXME: This should be configurable
         check: Some(Algorithm::BLAKE),
-        // FIXME: This should be configurables
+        // FIXME: This should be configurable
         collision: CollisionPolicy::Fail,
         safe: !non_safe,
         retries: *retries,
@@ -145,6 +149,8 @@ async fn main_w_args(args: &[String]) -> Result<()> {
     .await
 }
 
+/// Entry point of the application.
+/// 
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = std::env::args().collect::<Vec<_>>();

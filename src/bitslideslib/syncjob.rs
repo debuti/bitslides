@@ -1,12 +1,19 @@
 use std::fmt::Debug;
 
+/// SyncJob representation.
+/// 
 #[derive(PartialEq, Clone)]
 pub struct SyncJob {
+    /// Source volume
     pub src: String,
+    /// Destination volume
     pub dst: String,
+    /// Issue volume
     pub issue: String,
 }
 
+/// SyncJob Debug implementation.
+/// 
 impl Debug for SyncJob {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{} -{}-> {}", self.src, self.issue, self.dst)

@@ -6,6 +6,8 @@ use std::{collections::HashMap, path::PathBuf};
 
 const DEFAULT_VOLUME_CONFIG_FILE: &str = ".volume.yml";
 
+/// Volume representation.
+/// 
 #[derive(Debug)]
 pub struct Volume {
     /// Name of the volume
@@ -19,6 +21,8 @@ pub struct Volume {
 }
 
 impl Volume {
+    /// Create a new volume.
+    /// 
     pub fn new(name: String, keyword: &str, path: PathBuf) -> Self {
         Self {
             name,
@@ -28,6 +32,8 @@ impl Volume {
         }
     }
 
+    /// Identify a volume from a path.
+    /// 
     pub fn from_path(maybe_volume: PathBuf, keyword: &str) -> Option<Self> {
         let slides_path = maybe_volume.join(keyword);
         if slides_path.exists() {
@@ -77,10 +83,14 @@ impl Volume {
         None
     }
 
+    /// Add a slide to the volume.
+    /// 
     pub fn add_slide(&mut self, slide: Slide) {
         self.slides.insert(slide.name.clone(), slide);
     }
 
+    /// Create a new slide and add it to the volume.
+    /// 
     pub fn create_slide(&mut self, name: &str) -> Result<()> {
         let path = self.path.join(&self.keyword).join(name);
         std::fs::create_dir_all(&path)?;

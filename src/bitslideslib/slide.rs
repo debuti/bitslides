@@ -1,5 +1,7 @@
 use std::path::PathBuf;
 
+/// Slide representation.
+/// 
 #[derive(Debug)]
 pub struct Slide {
     /// Name of the destination volume
@@ -10,7 +12,11 @@ pub struct Slide {
     pub or_else: Option<String>,
 }
 
+/// Slide implementation.
+/// 
 impl Slide {
+    /// Create a new slide.
+    /// 
     pub fn new(name: String, path: PathBuf, or_else: Option<String>) -> Self {
         Self {
             name,

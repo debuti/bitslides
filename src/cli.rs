@@ -5,6 +5,7 @@ const APP_NAME: &str = env!("CARGO_PKG_NAME");
 const APP_VERS: &str = env!("CARGO_PKG_VERSION");
 
 /// Returns a list of default configuration files.
+/// 
 fn default_config_files() -> Vec<PathBuf> {
     let mut paths = vec![
         PathBuf::from("/etc/bitslides/default.conf"),
