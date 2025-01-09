@@ -1,7 +1,7 @@
 use anyhow::{bail, Result};
 use chrono::prelude::*;
 use config::GlobalConfig;
-use fs::MoveRequest;
+use fs::MoveStrategy;
 use slide::Slide;
 use std::{
     collections::HashMap,
@@ -78,7 +78,7 @@ pub async fn slide(config: GlobalConfig) -> Result<()> {
         None => None,
     };
 
-    let move_req = MoveRequest {
+    let move_req = MoveStrategy {
         collision: config.collision,
         safe: false,
         check: config.check,
@@ -319,7 +319,7 @@ async fn execute_syncjobs(
     syncjobs: &SyncJobs,
     dry_run: bool,
     tracer: Option<Sender<Option<String>>>,
-    move_req: &MoveRequest,
+    move_req: &MoveStrategy,
 ) -> Result<()> {
     let mut handles = Vec::new();
 
@@ -367,7 +367,7 @@ async fn sync_slide(
     dst: &Path,
     dry_run: bool,
     tracer: Option<Sender<Option<String>>>,
-    move_req: &MoveRequest,
+    move_req: &MoveStrategy,
 ) -> Result<()> {
     log::info!("Syncing {:?}", syncjob);
 

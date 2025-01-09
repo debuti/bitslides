@@ -10,7 +10,7 @@ use super::{
 /// Move request parameters.
 ///
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
-pub struct MoveRequest {
+pub struct MoveStrategy {
     /// What to do in case of a file collision
     pub collision: CollisionPolicy,
     /// If true, create a .wip file in the destination and move the file there
@@ -21,6 +21,97 @@ pub struct MoveRequest {
     pub retries: u8,
 }
 
+/// Delete all empty folders inside a path, leave the path root untouched.
+///
+async fn delete_empty_folders(root: &Path) -> Result<()> {
+    /// Recursively delete empty folders, including the root folder.
+    ///
+    async fn try_delete_empty_folders(root: &Path) -> Result<()> {
+        /// Add an exception to the list of exceptions.
+        ///
+        fn add_exception(exceptions: &mut Vec<PathBuf>, item: &Path) -> Result<()> {
+            let item = item.canonicalize()?;
+
+            for exception in &mut *exceptions {
+                if exception.starts_with(&item) {
+                    // The folder is already recorded
+                    return Ok(());
+                }
+                if item.starts_with(&*exception) {
+                    // The folder contains an exception
+                    *exception = item;
+                    return Ok(());
+                }
+            }
+
+            exceptions.push(item);
+
+            Ok(())
+        }
+
+        /// Check if a path is an exception.
+        ///
+        fn is_exception(exceptions: &Vec<PathBuf>, item: &Path) -> bool {
+            let item = match item.canonicalize() {
+                Ok(p) => p,
+                Err(_) => return false,
+            };
+            for exception in exceptions {
+                if exception.starts_with(&item) {
+                    return true;
+                }
+            }
+            false
+        }
+
+        let mut stack = vec![root.to_owned()];
+        let mut exceptions: Vec<PathBuf> = vec![];
+
+        // Iterate
+        'main: while !stack.is_empty() {
+            let mut is_empty = true;
+
+            let current = stack.pop().unwrap();
+
+            // Read the directory
+            if let Ok(mut read_dir) = tokio::fs::read_dir(&current).await {
+                while let Ok(Some(entry)) = read_dir.next_entry().await {
+                    let path = entry.path();
+
+                    is_empty = false;
+
+                    if path.is_dir() {
+                        if is_exception(&exceptions, &path) {
+                            continue;
+                        }
+                        stack.push(current);
+                        stack.push(path);
+                        continue 'main;
+                    } else {
+                        add_exception(&mut exceptions, &current)?;
+                    }
+                }
+            }
+            if is_empty {
+                tokio::fs::remove_dir(current).await?;
+            }
+        }
+        Ok(())
+    }
+
+    // Fill the jobs queue with all the top-level directories
+    if let Ok(mut read_dir) = tokio::fs::read_dir(&root).await {
+        while let Ok(Some(entry)) = read_dir.next_entry().await {
+            let path = entry.path();
+            if path.is_dir() {
+                try_delete_empty_folders(&path).await?;
+            }
+        }
+    }
+
+    Ok(())
+}
+
 /// Recursively move the contents of one directory to another.
 ///
 pub async fn sync<U: AsRef<Path>, V: AsRef<Path>>(
@@ -28,17 +119,17 @@ pub async fn sync<U: AsRef<Path>, V: AsRef<Path>>(
     to: V,
     dry_run: bool,
     tracer: &Option<(Sender<Option<String>>, &SyncJob)>,
-    request: &MoveRequest,
+    request: &MoveStrategy,
 ) -> Result<()> {
     let from = PathBuf::from(from.as_ref());
     let to = PathBuf::from(to.as_ref());
 
-    let mut jobs = Vec::new();
+    dbg!(&from, &to);
 
     let input_root_length = from.components().count();
     let output_root = to;
 
-    jobs.push(from);
+    let mut jobs = vec![from.clone()];
 
     while let Some(job) = jobs.pop() {
         log::debug!("process: {:?}", &job);
@@ -86,10 +177,10 @@ pub async fn sync<U: AsRef<Path>, V: AsRef<Path>>(
 
             match src.file_name() {
                 Some(filename) => {
-                    log::info!("Copy: {:?} -> {:?}", &src, &dst);
+                    log::info!("Move: {:?} -> {:?}", &src, &dst);
                     if let Some((tracer, syncjob)) = &tracer {
                         tracer
-                            .send(Some(format!("[{:?}] CP {:?} -> {:?}", syncjob, src, dst,)))
+                            .send(Some(format!("[{:?}] MV {:?} -> {:?}", syncjob, src, dst,)))
                             .await?;
                     }
                     let dst = dst.join(filename);
@@ -104,7 +195,11 @@ pub async fn sync<U: AsRef<Path>, V: AsRef<Path>>(
         }
     }
 
-    Ok(())
+    if !dry_run {
+        delete_empty_folders(&from).await
+    } else {
+        Ok(())
+    }
 }
 
 /// Move a single file from one location to another.
@@ -112,7 +207,7 @@ pub async fn sync<U: AsRef<Path>, V: AsRef<Path>>(
 async fn move_file<F>(
     src_file: &PathBuf,
     mut dst_file: &PathBuf,
-    request: &MoveRequest,
+    request: &MoveStrategy,
     hash_file: F,
 ) -> Result<()>
 where

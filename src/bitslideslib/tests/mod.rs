@@ -140,7 +140,7 @@ async fn test_execute_syncjobs() {
 
     // Action: Execute the sync jobs
     {
-        let move_req = MoveRequest {
+        let move_req = MoveStrategy {
             collision: CollisionPolicy::Fail,
             safe: false,
             check: None,
@@ -162,8 +162,8 @@ async fn test_execute_syncjobs() {
         for needle in &[
             "[foo -bar-> bar] MKDIR",
             "[bar -foo-> foo] MKDIR",
-            "[foo -bar-> bar] CP",
-            "[bar -foo-> foo] CP",
+            "[foo -bar-> bar] MV",
+            "[bar -foo-> foo] MV",
         ] {
             assert!(traces.iter().any(|x| x.as_ref().unwrap().contains(needle)));
         }
@@ -198,14 +198,20 @@ async fn test_execute_syncjobs() {
         // Check: The source slide should not have any contents
         {
             let src = &volumes["bar"].slides["foo"].path;
-            let file = src.join("photos").join("photo1.jpg");
+            let slide = src;
+            let top = slide.join("photos");
+            let folder = top.join("trip-to-rome");
+            let file = folder.join("photo1.jpg");
             assert!(!file.exists());
+            assert!(!folder.exists());
+            assert!(top.exists());
+            assert!(slide.exists());
         }
 
         // Check: The destination slide should have the contents of the source slide
         {
             let dst = &volumes["foo"].slides["foo"].path;
-            let file = dst.join("photos").join("photo1.jpg");
+            let file = dst.join("photos").join("trip-to-rome").join("photo1.jpg");
             let expected = "92AB673D915A94DCF187720E8AC0D608";
             assert!(
                 file.exists()
@@ -246,7 +252,7 @@ async fn test_execute_syncjobs_with_missing_source() {
 
     // Execute the sync jobs
     let result = {
-        let move_req = MoveRequest {
+        let move_req = MoveStrategy {
             collision: CollisionPolicy::Fail,
             safe: false,
             check: None,

@@ -1,4 +1,6 @@
+#[cfg(any())]
 use log::LevelFilter;
+#[cfg(any())]
 use simplelog::{ColorChoice, Config, TermLogger, TerminalMode};
 use std::fs::File;
 use std::io::Result;
@@ -117,7 +119,10 @@ fn install_scenario(scenario: &TestFolder, tempdir: tempfile::TempDir) -> Result
     })
 }
 
+/// Sets up a test context for unit tests.
+///
 pub(crate) fn setup() -> Result<TestContext> {
+    #[cfg(any())]
     let _ = TermLogger::init(
         LevelFilter::Trace,
         Config::default(),
@@ -189,8 +194,14 @@ pub(crate) fn setup() -> Result<TestContext> {
                             folders: &[(
                                 "photos",
                                 TestFolder {
-                                    folders: &[],
-                                    files: &[("photo1.jpg", &[0xffu8; 16 * 1024])],
+                                    folders: &[(
+                                        "trip-to-rome",
+                                        TestFolder {
+                                            folders: &[],
+                                            files: &[("photo1.jpg", &[0xffu8; 16 * 1024])],
+                                        },
+                                    )],
+                                    files: &[],
                                 },
                             )],
                             files: &[],

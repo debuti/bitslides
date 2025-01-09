@@ -4,33 +4,170 @@ use std::fs::{self, File};
 use std::io::Write;
 use tempfile::{tempdir, TempDir};
 
-/// Test that a file is copied from the source to the destination directory.
+/// Test that a empty folder structure is completely removed, but for the root folder.
 #[tokio::test]
-async fn test_copy_directory() {
+async fn test_delete_empty_folders_everything_to_ashes() {
+    let temp_dir = tempdir().unwrap();
+    // Prerequisite: Create directory structure
+    {
+        // root
+        // ├── a
+        // │   |── c
+        // │   └── d
+        // │       └── e
+        // │           └── f
+        // └── b
+        fs::create_dir_all(&temp_dir.path().join("a").join("c")).unwrap();
+        fs::create_dir_all(&temp_dir.path().join("a").join("d").join("e").join("f")).unwrap();
+        fs::create_dir_all(&temp_dir.path().join("b")).unwrap();
+    }
+
+    // Action: Delete empty folders
+    delete_empty_folders(&temp_dir.path()).await.unwrap();
+
+    // Check: Verify the folders that should remain
+    {
+        assert!(temp_dir.path().exists());
+    }
+    // Check: Verify the folders that should have been removed
+    {
+        assert!(!temp_dir.path().join("a").exists());
+        assert!(!temp_dir.path().join("b").exists());
+    }
+}
+
+/// Test that an almost empty folder structure can't be completely removed.
+#[tokio::test]
+async fn test_delete_empty_folders_but_cant_completely() {
+    let temp_dir = tempdir().unwrap();
+    // Prerequisite: Create directory structure
+    {
+        // root
+        // ├── a
+        // │   |── b
+        // │   |── c
+        // │   |── d
+        // │   |   └── file.txt
+        // │   └── e
+        // │       └── f
+        // │           |── file.txt
+        // │           |── g
+        // │           └── h
+        // |               └── file.txt
+        // |── i
+        // |   └── j
+        // |       └── file.txt
+        // └── k
+        fs::create_dir_all(&temp_dir.path().join("a").join("b")).unwrap();
+        fs::create_dir_all(&temp_dir.path().join("a").join("c")).unwrap();
+        fs::create_dir_all(&temp_dir.path().join("a").join("d")).unwrap();
+        File::create(&temp_dir.path().join("a").join("d").join("file.txt")).unwrap();
+        fs::create_dir_all(&temp_dir.path().join("a").join("e").join("f").join("g")).unwrap();
+        fs::create_dir_all(&temp_dir.path().join("a").join("e").join("f").join("h")).unwrap();
+        File::create(
+            &temp_dir
+                .path()
+                .join("a")
+                .join("e")
+                .join("f")
+                .join("file.txt"),
+        )
+        .unwrap();
+        File::create(
+            &temp_dir
+                .path()
+                .join("a")
+                .join("e")
+                .join("f")
+                .join("h")
+                .join("file.txt"),
+        )
+        .unwrap();
+        fs::create_dir_all(&temp_dir.path().join("i").join("j")).unwrap();
+        File::create(&temp_dir.path().join("i").join("j").join("file.txt")).unwrap();
+        fs::create_dir_all(&temp_dir.path().join("k")).unwrap();
+    }
+
+    // Action: Delete empty folders
+    delete_empty_folders(&temp_dir.path()).await.unwrap();
+
+    // Check: Verify the folders that should remain
+    {
+        assert!(temp_dir.path().exists());
+        assert!(temp_dir
+            .path()
+            .join("a")
+            .join("d")
+            .join("file.txt")
+            .exists());
+        assert!(temp_dir
+            .path()
+            .join("a")
+            .join("e")
+            .join("f")
+            .join("file.txt")
+            .exists());
+        assert!(temp_dir
+            .path()
+            .join("a")
+            .join("e")
+            .join("f")
+            .join("h")
+            .join("file.txt")
+            .exists());
+        assert!(temp_dir
+            .path()
+            .join("i")
+            .join("j")
+            .join("file.txt")
+            .exists());
+    }
+    // Check: Verify the folders that should have been removed
+    {
+        assert!(!temp_dir.path().join("a").join("b").exists());
+        assert!(!temp_dir.path().join("a").join("c").exists());
+        assert!(!temp_dir
+            .path()
+            .join("a")
+            .join("e")
+            .join("f")
+            .join("g")
+            .exists());
+        assert!(!temp_dir.path().join("k").exists());
+    }
+}
+
+/// Test that a file is copied from the source to the destination directory with different strategies.
+#[tokio::test]
+async fn test_sync_directory() {
+    // root
+    // ├── src
+    // │   └── test.txt
+    // └── dest
     let temp_dir = tempdir().unwrap();
     let src_dir = temp_dir.path().join("src");
     let dest_dir = temp_dir.path().join("dest");
 
     let requests = [
-        MoveRequest {
+        MoveStrategy {
             collision: CollisionPolicy::Fail,
             safe: false,
             check: None,
             retries: 1,
         },
-        MoveRequest {
+        MoveStrategy {
             collision: CollisionPolicy::Overwrite,
             safe: false,
             check: Some(Algorithm::CRC32),
             retries: 1,
         },
-        MoveRequest {
+        MoveStrategy {
             collision: CollisionPolicy::Skip,
             safe: true,
             check: None,
             retries: 1,
         },
-        MoveRequest {
+        MoveStrategy {
             collision: CollisionPolicy::Rename {
                 suffix: "bro".to_owned(),
             },
@@ -64,22 +201,29 @@ async fn test_copy_directory() {
     }
 }
 
+/// Test that nothing happens when the source directory is empty.
 #[tokio::test]
-async fn test_copy_empty_directory() {
+async fn test_sync_empty_directory() {
+    // root
+    // ├── src
+    // └── dest
     let temp_dir = tempdir().unwrap();
     let src_dir = temp_dir.path().join("src");
     let dest_dir = temp_dir.path().join("dest");
 
-    // Create empty source directory
+    // Prerequisite: Create empty source directory
     fs::create_dir(&src_dir).unwrap();
 
-    // Perform copy
+    // Check: Verify destination directory now exists
+    assert!(!dest_dir.exists());
+
+    // Action: Sync
     sync(
         &src_dir,
         &dest_dir,
         false,
         &None,
-        &MoveRequest {
+        &MoveStrategy {
             collision: CollisionPolicy::Fail,
             safe: false,
             check: Some(Algorithm::CRC32),
@@ -89,30 +233,42 @@ async fn test_copy_empty_directory() {
     .await
     .unwrap();
 
-    // Verify destination directory exists
+    // Check: Verify destination directory now exists
     assert!(dest_dir.exists());
+
+    // Check: The destination directory is empty
+    {
+        let entries = fs::read_dir(&dest_dir).unwrap();
+        assert_eq!(entries.count(), 0);
+    }
 }
 
+/// Test that a file belonging to a nested directory is copied from the source to the destination directory.
 #[tokio::test]
-async fn test_copy_nested_directories() {
+async fn test_sync_nested_directories() {
+    // root
+    // ├── src
+    // │   └── nested
+    // │       └── test.txt
+    // └── dest
     let temp_dir = tempdir().unwrap();
     let src_dir = temp_dir.path().join("src");
     let nested_dir = src_dir.join("nested");
     let dest_dir = temp_dir.path().join("dest");
 
-    // Create nested directory structure
+    // Prerequisite: Create nested directory structure
     fs::create_dir_all(&nested_dir).unwrap();
     let src_file_path = nested_dir.join("test.txt");
     let mut src_file = File::create(&src_file_path).unwrap();
     writeln!(src_file, "Nested file").unwrap();
 
-    // Perform copy
+    // Action: Sync
     sync(
         &src_dir,
         &dest_dir,
         false,
         &None,
-        &MoveRequest {
+        &MoveStrategy {
             collision: CollisionPolicy::Fail,
             safe: false,
             check: Some(Algorithm::CRC32),
@@ -122,12 +278,24 @@ async fn test_copy_nested_directories() {
     .await
     .unwrap();
 
-    // Verify destination directory structure
-    let dest_nested_dir = dest_dir.join("nested");
-    let dest_file_path = dest_nested_dir.join("test.txt");
-    assert!(dest_file_path.exists());
-    let content = fs::read_to_string(dest_file_path).unwrap();
-    assert_eq!(content, "Nested file\n");
+    // Check: Verify destination
+    {
+        let dest_nested_dir = dest_dir.join("nested");
+        let dest_file_path = dest_nested_dir.join("test.txt");
+
+        // Check: Verify destination directory structure
+        assert!(dest_file_path.exists());
+
+        // Check: Verify destination file content
+        {
+            let content = fs::read_to_string(dest_file_path).unwrap();
+            assert_eq!(content, "Nested file\n");
+        }
+    }
+
+    // Check: Verify source directory structure is unchanged
+    assert!(!src_file_path.exists());
+    assert!(!nested_dir.exists());
 }
 
 /// Setup the environment for testing all move_file permutations.
@@ -136,7 +304,7 @@ fn setup_move_file() -> (TempDir, PathBuf, PathBuf) {
     let src_dir = tmp_dir.path().join("src");
     let dst_dir = tmp_dir.path().join("dst");
 
-    // Create source directory structure
+    // Prerequisite: Create source directory structure
     fs::create_dir_all(&src_dir).unwrap();
     let src_file = src_dir.join("test.txt");
     write!(File::create(&src_file).unwrap(), "source").unwrap();
@@ -160,7 +328,7 @@ async fn test_move_file_collision_fail() {
     let result = move_file(
         &src_file,
         &dst_file,
-        &MoveRequest {
+        &MoveStrategy {
             collision: CollisionPolicy::Fail,
             safe: false,
             check: None,
@@ -203,7 +371,7 @@ async fn test_move_file_collision_skip() {
     let result = move_file(
         &src_file,
         &dst_file,
-        &MoveRequest {
+        &MoveStrategy {
             collision: CollisionPolicy::Skip,
             safe: false,
             check: None,
@@ -240,7 +408,7 @@ async fn test_move_file_collision_overwrite() {
     let result = move_file(
         &src_file,
         &dst_file,
-        &MoveRequest {
+        &MoveStrategy {
             collision: CollisionPolicy::Overwrite,
             safe: false,
             check: None,
@@ -273,7 +441,7 @@ async fn test_move_file_collision_rename() {
     let result = move_file(
         &src_file,
         &dst_file,
-        &MoveRequest {
+        &MoveStrategy {
             collision: CollisionPolicy::Rename {
                 suffix: "test".to_owned(),
             },
@@ -315,7 +483,7 @@ async fn test_move_file_safe() {
     let result = move_file(
         &src_file,
         &dst_file,
-        &MoveRequest {
+        &MoveStrategy {
             collision: CollisionPolicy::Fail,
             safe: true,
             check: None,
@@ -358,7 +526,7 @@ async fn test_move_file_check() {
     let result = move_file(
         &src_file,
         &dst_file,
-        &MoveRequest {
+        &MoveStrategy {
             collision: CollisionPolicy::Fail,
             safe: false,
             check: Some(Algorithm::MD5),
@@ -409,7 +577,7 @@ async fn test_move_file_check_failed() {
     let result = move_file(
         &src_file,
         &dst_file,
-        &MoveRequest {
+        &MoveStrategy {
             collision: CollisionPolicy::Fail,
             safe: false,
             check: Some(Algorithm::MD5),
