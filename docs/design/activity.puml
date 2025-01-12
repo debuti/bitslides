@@ -1,0 +1,20 @@
+@startuml
+
+start
+
+:Read config file;
+:Retrieve list of roots;
+
+repeat :For each root;
+  :Identify volumes;
+  repeat :For each volume;
+    :identify queues;
+    :**sync queue to volume**;
+  repeat while ()
+repeat while ()
+
+:Go To Sleep;
+
+stop
+
+@enduml
