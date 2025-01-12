@@ -262,13 +262,18 @@ fn build_syncjobs(volumes: &mut HashMap<String, Volume>) -> Result<SyncJobs> {
     let mut syncjobs = Vec::new();
 
     for src_name in volumes.keys() {
+        // Skip disabled volumes
+        if volumes[src_name].disabled {
+            continue;
+        }
+
         for (dst_name, slide) in &volumes[src_name].slides {
             if src_name == dst_name {
                 continue;
             }
 
             // If the destination volume is available, its a direct slide
-            if volumes.contains_key(dst_name) {
+            if volumes.contains_key(dst_name) && !volumes[dst_name].disabled {
                 syncjobs.push(SyncJob {
                     src: src_name.to_owned(),
                     dst: dst_name.to_owned(),
@@ -279,16 +284,16 @@ fn build_syncjobs(volumes: &mut HashMap<String, Volume>) -> Result<SyncJobs> {
 
             match &slide.or_else {
                 // If the slide has a default route, and the default route is available, its a indirect slide
-                Some(default_route) => {
-                    if volumes.contains_key(default_route) {
+                Some(def_route_name) => {
+                    if volumes.contains_key(def_route_name) && !volumes[def_route_name].disabled {
                         syncjobs.push(SyncJob {
                             src: src_name.to_owned(),
-                            dst: default_route.to_owned(),
+                            dst: def_route_name.to_owned(),
                             issue: dst_name.to_owned(),
                         });
                         continue;
                     }
-                    log::info!("default_route {default_route} not available");
+                    log::info!("default_route {def_route_name} not available");
                 }
                 _ => {
                     log::info!("{dst_name} not available and no default route");

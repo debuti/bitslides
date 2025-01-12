@@ -60,6 +60,8 @@ pub struct GlobalConfig {
 pub struct VolumeConfig {
     /// Optional name of the volume. If provided it will take precedence over the OS context.
     pub name: Option<String>,
+    /// Optional enable status of the volume. Disabled volumes will be identified but not processed.
+    pub disabled: Option<bool>,
 }
 
 /// Read a volume configuration file

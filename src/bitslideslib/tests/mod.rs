@@ -33,7 +33,7 @@ fn test_identify_slides() {
     let ctx = setup().unwrap();
 
     // Prerequisite: Create a volume object for the "foo" volume
-    let mut volume = Volume::new("foo".to_string(), "slides", ctx.roots[0].join("foo"));
+    let mut volume = Volume::new("foo".to_string(), true, "slides", ctx.roots[0].join("foo"));
 
     // Action: Call identify_slides operation with the volume object
     identify_slides(&mut volume).unwrap();
@@ -57,11 +57,14 @@ fn test_identify_env() {
     let volumes: HashMap<String, Volume> = identify_env("slides", &ctx.roots).unwrap();
 
     // Check: The result should contain 4 volumes
-    assert_eq!(volumes.len(), 4);
+    assert_eq!(volumes.len(), 5);
 
     // Check: The result should contain the volumes "foo" and "bar"
     for volume in ["foo", "bar"] {
         assert!(volumes.contains_key(volume));
+
+        // Check: The volume is enabled
+        assert!(!volumes[volume].disabled);
 
         // Check: The volume should contain 3 slides
         assert_eq!(volumes[volume].slides.len(), 3);
@@ -78,6 +81,9 @@ fn test_identify_env() {
     for volume in ["baz", "els"] {
         assert!(volumes.contains_key(volume));
 
+        // Check: The volume is enabled
+        assert!(!volumes[volume].disabled);
+
         // Check: The volume should contain 4 slides
         assert_eq!(volumes[volume].slides.len(), 5);
 
@@ -88,6 +94,15 @@ fn test_identify_env() {
     }
     assert!(volumes["baz"].slides["qux"].or_else.is_some());
     assert!(volumes["baz"].slides["foo"].or_else.is_some());
+
+    // Check: The result should contain the volume "disabled" (per volume config name override)
+    assert!(volumes.contains_key("disabled"));
+
+    // Check: The volume "disabled" is disabled
+    assert!(volumes["disabled"].disabled);
+
+    // Check: The volume name is
+    assert_eq!(volumes["disabled"].name, "disabled".to_owned());
 }
 
 /// Test the building of sync jobs between volumes
@@ -122,6 +137,9 @@ fn test_build_syncjobs() {
     for expected_syncjob in expected_syncjobs {
         assert!(syncjobs.contains(&expected_syncjob), "Missing {:?}", expected_syncjob);
     }
+
+    // Check: The sync jobs don't contain disabled volumes
+    assert!(!syncjobs.contains(&SyncJob {src: "disabled".to_owned(), dst: "foo".to_owned(), issue: "foo".to_owned(), }));
 }
 
 /// Test the execution of sync jobs between volumes

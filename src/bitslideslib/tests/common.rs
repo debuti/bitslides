@@ -8,6 +8,8 @@ use std::io::Write;
 use std::path::Path;
 use std::path::PathBuf;
 
+use crate::bitslideslib::volume::DEFAULT_VOLUME_CONFIG_FILE;
+
 use super::DEFAULT_SLIDE_CONFIG_FILE;
 
 /// A structure representing the context for tests, which includes a temporary directory
@@ -322,6 +324,25 @@ pub(crate) fn setup() -> Result<TestContext> {
         )],
         files: &[],
     };
+    const DIS: TestFolder = TestFolder {
+        folders: &[(
+            "slides",
+            TestFolder {
+                folders: &[(
+                    "foo",
+                    TestFolder {
+                        folders: &[],
+                        files: &[],
+                    },
+                )],
+                files: &[(
+                    DEFAULT_VOLUME_CONFIG_FILE,
+                    "name: disabled\ndisabled: true".as_bytes(),
+                )],
+            },
+        )],
+        files: &[],
+    };
 
     const ROOT0: TestFolder = TestFolder {
         folders: &[
@@ -356,7 +377,7 @@ pub(crate) fn setup() -> Result<TestContext> {
         )],
     };
     const ROOT1: TestFolder = TestFolder {
-        folders: &[("baz", BAZ), ("els", ELS)],
+        folders: &[("baz", BAZ), ("els", ELS), ("dis", DIS)],
         files: &[],
     };
 
