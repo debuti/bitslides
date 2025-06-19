@@ -28,7 +28,7 @@ impl Volume {
     pub fn new(name: String, disabled: bool, keyword: &str, path: PathBuf) -> Self {
         Self {
             name,
-            disabled: disabled,
+            disabled,
             keyword: keyword.to_owned(),
             path,
             slides: HashMap::new(),
@@ -44,7 +44,7 @@ impl Volume {
 
             // Try to retrieve the configured name first
             let volume_conf =
-                config::read_volume_config(slides_path.join(DEFAULT_VOLUME_CONFIG_FILE));
+                config::VolumeConfig::new(slides_path.join(DEFAULT_VOLUME_CONFIG_FILE));
             if let Ok(v) = volume_conf {
                 if let Some(n) = v.disabled {
                     disabled = n;

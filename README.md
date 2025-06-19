@@ -11,7 +11,7 @@ Watches your volumes (HDD, USB drive, network mounted storage, etc.) and synchro
 
 ## Introduction
 
-We all have multiple devices lying around: your personal computer, an external drive to save media, the smartphone, or even some cloud storage. Usually each device is dedicated to some specific tasks, the personal computer is used for photo editing, while the cloud storage is used to save your loved mp3s. Manually sending new contents to each device is a repetitive task that can be avoided using automation, and this is the gap `bitslides` solves, managing the transfer of information between devices.
+We all have multiple devices lying around: your personal computer, an external drive to save media, the smartphone, or even some cloud storage. Usually each device is dedicated to some specific tasks, the personal computer is used for photo editing, while the cloud storage is used to save your loved mp3s. Manually sending new contents to each device is a repetitive task that can be avoided using automation, and this is the gap `bitslides` fills, managing the transfer of information between devices.
 
 Let's review its features through an example. 
 
@@ -24,7 +24,7 @@ Let's review its features through an example.
 
 Each time *Donald* needs to transfer files between his devices, he has to connect each device manually, organize the files into specific folders, and ensure no duplicates or misplaced files are left behind. This process can become tedious and error-prone, especially as the number of devices and file types grows.
 
-This is where `bitslides` comes to the rescue. By configuring slides (mailboxes-like special directories associated with specific tasks or destinations) *Donald* can automate the entire workflow. Here's how `bitslides` simplifies *Donald*'s life:
+This is where `bitslides` comes to the rescue. By configuring slides (mailbox-like special directories associated with specific tasks or destinations) *Donald* can automate the entire workflow. Here's how `bitslides` simplifies *Donald*'s life:
 
 #### Setup the slides
 
@@ -40,16 +40,16 @@ On the server:
 
 > Daemon mode is first prio on the TO DO list
 
-When ran `bitslides` automatically detects the attached volumes, checks for slides, and synchronizes the relevant files. For *Donald*:
+When ran, `bitslides` automatically detects the attached volumes, checks for slides, and synchronizes the relevant files. For *Donald*:
 
  * When the pendrive is connected to the laptop, all music files in the pendrive are moved into the Laptop slide (`/media/Laptop/Slides/Laptop/Music/`).
- * When the server is mounted into the laptop:
+ * When the server drive is mounted into the laptop (ex. NFS):
    * all the ISOs are moved into the server slide (`/media/Server/Slides/Server/Movies/`)
    * all the MP4s created on the server are transferred to the laptop slide (`/media/Laptop/Slides/Laptop/Movies/`).
 
 #### Default routes
 
-Sometimes its not handy or even possible to have it all connected or mounted in the same computer. We can leverage the routing feature of `bitslides` to workaround this sort of situations. *Donald* decided to no longer mount the server drive for performance reasons, still he wants to send information from and to his Server
+Sometimes its not handy or even possible to have it all connected or mounted on the same computer. We can leverage the routing feature of `bitslides` to workaround this sort of situations. *Donald* decided to no longer mount the server drive for performance reasons, still he wants to send information from and to his Server
 
  * On the Laptop, create a `.slide.yml` in `/media/Laptop/Slides/Server/` and add these contents
  ```route: Pendrive```
@@ -104,8 +104,9 @@ trace: "bitslides.%Y%m%d_%H%M%S.log"
 * `keyword`: By default the folder that is going to be sync is named 'Slides' but you can override this name with this optional configuration.
 * `trace`: Path or path template where the `bitslides` will save a record of the actions it took.
 
-
 ### Volume config file
+
+Placed on the "Slides" folder of any Volume, allows for Volume-level fine tuning. 
 
 ```
 # name: Name of the volume.
@@ -134,4 +135,5 @@ route: "myothervol"
  * **Mobile App**: Companion app for Android/iOS to manage devices and monitor synchronization remotely.
 
 ## Contributions Welcome
+
 `bitslides` is an open-source project! If you’d like to contribute, head over to the [GitHub repository](https://github.com/debuti/bitslides). Whether it’s fixing bugs, suggesting features, or improving documentation, your help is appreciated.

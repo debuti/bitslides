@@ -25,3 +25,11 @@ Cargo.lock
 tarpaulin-report.html
 cobertura.xml
 coverage.xml
+
+# Log files
+*.log
+
+# Test arena
+test/arena/original/
+test/arena/processed/
+test/arena/expected/

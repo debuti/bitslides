@@ -13,13 +13,15 @@ pub struct Config {
     pub trace: Option<String>,
 }
 
-/// Reads a configuration file.
-///
-pub fn read_config<P>(file_path: P) -> Result<Config>
-where
-    P: AsRef<Path>,
-{
-    let file_content = std::fs::read_to_string(file_path)?;
-    let config = serde_yaml::from_str(&file_content)?;
-    Ok(config)
+impl Config {
+    /// Reads a configuration file.
+    ///
+    pub fn new<P>(file_path: P) -> Result<Self>
+    where
+        P: AsRef<Path>,
+    {
+        let file_content = std::fs::read_to_string(file_path)?;
+        let config = serde_yaml::from_str(&file_content)?;
+        Ok(config)
+    }
 }

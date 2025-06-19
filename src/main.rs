@@ -43,17 +43,17 @@ fn generate_trace_path(trace_fmt: &str) -> Option<PathBuf> {
 /// Processes all configuration files and returns a list of `RootsetConfig` instances.
 ///
 fn process_all_configs(
-    config_files: Vec<&PathBuf>,
+    config_paths: Vec<&PathBuf>,
 ) -> Result<(Vec<RootsetConfig>, Option<PathBuf>)> {
     let mut success = false;
     let mut rootsets = Vec::new();
     let mut trace = None;
 
-    for config_path in config_files {
+    for config_path in config_paths {
         log::info!("Loading configuration from: {config_path:?}...");
 
         if config_path.exists() {
-            match config::read_config(config_path.to_str().unwrap()) {
+            match config::Config::new(config_path) {
                 Ok(config) => {
                     let keyword = config.keyword.unwrap_or(DEFAULT_KEYWORD.to_owned());
                     let roots = config
@@ -63,7 +63,13 @@ fn process_all_configs(
                             if x.contains("$") {
                                 unimplemented!("Environment variables not supported yet");
                             }
-                            PathBuf::from(x)
+                            let x =  PathBuf::from(x);
+                            if x.is_absolute() {
+                                x
+                            }
+                            else {
+                                PathBuf::from(config_path.parent().unwrap()).join(x)
+                            }
                         })
                         .collect::<Vec<PathBuf>>();
 
@@ -112,10 +118,10 @@ async fn main_w_args(args: &[String]) -> Result<()> {
     // Initialize the logging framework
     #[cfg(not(test))]
     {
-        let verbose = *matches.get_one::<u8>("verbose").unwrap_or(&0);
+        let verbosity = *matches.get_one::<u8>("verbose").unwrap_or(&0);
         // Initialize the logging framework
         TermLogger::init(
-            match verbose {
+            match verbosity {
                 0 => LevelFilter::Error,
                 1 => LevelFilter::Warn,
                 2 => LevelFilter::Info,
@@ -128,7 +134,7 @@ async fn main_w_args(args: &[String]) -> Result<()> {
         )
         .map_err(|_| anyhow!("Unable to initialize log"))?;
 
-        if dry_run && verbose < 2 {
+        if dry_run && verbosity < 2 {
             bail!("Dry-run mode is enabled, but the verbosity level is too low to see the output");
         }
     }

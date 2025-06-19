@@ -118,7 +118,7 @@ pub async fn sync<U: AsRef<Path>, V: AsRef<Path>>(
     from: U,
     to: V,
     dry_run: bool,
-    tracer: &Option<(Sender<Option<String>>, &SyncJob)>,
+    trace_handle: &Option<(Sender<Option<String>>, &SyncJob)>,
     request: &MoveStrategy,
 ) -> Result<()> {
     let from = PathBuf::from(from.as_ref());
@@ -152,8 +152,8 @@ pub async fn sync<U: AsRef<Path>, V: AsRef<Path>>(
         if std::fs::metadata(&dst).is_err() {
             log::info!("Mkdir: {:?}", dst);
 
-            if let Some((tracer, syncjob)) = &tracer {
-                tracer
+            if let Some((trace_handle, syncjob)) = &trace_handle {
+                trace_handle
                     .send(Some(format!("[{:?}] MKDIR {:?}", syncjob, dst,)))
                     .await?;
             }
@@ -178,8 +178,8 @@ pub async fn sync<U: AsRef<Path>, V: AsRef<Path>>(
             match src.file_name() {
                 Some(filename) => {
                     log::info!("Move: {:?} -> {:?}", &src, &dst);
-                    if let Some((tracer, syncjob)) = &tracer {
-                        tracer
+                    if let Some((trace_handle, syncjob)) = &trace_handle {
+                        trace_handle
                             .send(Some(format!("[{:?}] MV {:?} -> {:?}", syncjob, src, dst,)))
                             .await?;
                     }
