@@ -95,6 +95,25 @@ pub async fn slide(config: GlobalConfig) -> Result<()> {
     result
 }
 
+
+1. Analizar los roots. 
+ 1.1. Poner un watch en los roots. Si algun nuevo directorio des/aparece, o si en windows des/aparece una nueva letra de unidad, se regeneran los syncjobs.
+  * El watch debe ser compatible con async. A ver!
+ 1.2. Para cada volumen, se pone un watch en su folder slides (o varios uno por subfolder, ver q conviene mas)
+  1.2.1. En el momento que salte el watch se ejecuta el syncjob. Validar que el syncjob no esta activo en ese momento.
+  1.2.2. Si el volumen desaparece, eliminar todos los watches.
+ 1.3. Reejecutar los syncjobs de vez en cuando periodicamente.
+ 1.4. Reanalizar periodicamente los roots
+
+ corner cases
+  * Un volumen desaparece en medio de un syncjob -> Report usuario y abortar syncjob
+
+
+
+
+
+
+
 /// Tidy up the volumes.
 ///
 /// This function traverses the slides of each volume and applies the rules defined in the .slide.yml file.

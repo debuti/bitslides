@@ -112,6 +112,7 @@ async fn main_w_args(args: &[String]) -> Result<()> {
         .expect("No configuration file found among provided/defaults.");
 
     let dry_run = matches.get_flag("dry-run");
+    let one_shot = matches.get_flag("one-shot");
     let non_safe = matches.get_flag("non-safe");
     let retries = matches.get_one::<u8>("retries").unwrap();
 
@@ -144,6 +145,7 @@ async fn main_w_args(args: &[String]) -> Result<()> {
     slide(GlobalConfig {
         rootsets,
         dry_run,
+        one_shot,
         trace,
         // FIXME: This should be configurable
         check: Some(Algorithm::BLAKE),
