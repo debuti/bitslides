@@ -22,6 +22,8 @@ simplelog = "0.12.2"
 # MIT
 checksums = "0.9.1"
 tokio = { version = "1", features = ["full"] }
+# CC0
+notify = "8.2.0"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 # MIT OR Apache-2.0

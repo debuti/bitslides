@@ -124,7 +124,7 @@ pub async fn sync<U: AsRef<Path>, V: AsRef<Path>>(
     let from = PathBuf::from(from.as_ref());
     let to = PathBuf::from(to.as_ref());
 
-    dbg!(&from, &to);
+    // dbg!(&from, &to);
 
     let input_root_length = from.components().count();
     let output_root = to;

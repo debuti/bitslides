@@ -25,3 +25,5 @@ Cargo.lock
 tarpaulin-report.html
 cobertura.xml
 coverage.xml
+
+*.bck

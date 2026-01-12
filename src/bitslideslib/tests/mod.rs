@@ -88,11 +88,11 @@ fn test_identify_env() {
         assert_eq!(volumes[volume].slides.len(), 5);
 
         // Check: The volume should contain the following slides
-        for slide in ["foo", "bar", "baz", "qux", "quux"] {
+        for slide in ["foo", "bar", "baz", "qux_", "quux_"] {
             assert!(volumes[volume].slides.contains_key(slide));
         }
     }
-    assert!(volumes["baz"].slides["qux"].or_else.is_some());
+    assert!(volumes["baz"].slides["qux_"].or_else.is_some());
     assert!(volumes["baz"].slides["foo"].or_else.is_some());
 
     // Check: The result should contain the volume "disabled" (per volume config name override)
@@ -118,18 +118,23 @@ fn test_build_syncjobs() {
     // Action: Call build_syncjobs operation with the identified volumes
     let syncjobs = build_syncjobs(&mut volumes).unwrap();
 
+    println!("Syncjobs:");
+    for syncjob in &syncjobs {
+        println!("  {:?}", syncjob);
+    }
+
     let expected_syncjobs =[
-        SyncJob {src: "foo".to_owned(), dst: "bar".to_owned(), issue: "bar".to_owned(), },
-        SyncJob {src: "foo".to_owned(), dst: "baz".to_owned(), issue: "baz".to_owned(), },
-        SyncJob {src: "bar".to_owned(), dst: "foo".to_owned(), issue: "foo".to_owned(), },
-        SyncJob {src: "bar".to_owned(), dst: "baz".to_owned(), issue: "baz".to_owned(), },
-        SyncJob {src: "baz".to_owned(), dst: "foo".to_owned(), issue: "foo".to_owned(), },
-        SyncJob {src: "baz".to_owned(), dst: "bar".to_owned(), issue: "bar".to_owned(), },
-        SyncJob {src: "els".to_owned(), dst: "foo".to_owned(), issue: "foo".to_owned(), },
-        SyncJob {src: "els".to_owned(), dst: "bar".to_owned(), issue: "bar".to_owned(), },
-        SyncJob {src: "els".to_owned(), dst: "baz".to_owned(), issue: "baz".to_owned(), },
+        SyncJob::new("foo", "bar", "bar"),
+        SyncJob::new("foo", "baz", "baz"),
+        SyncJob::new("bar", "foo", "foo"),
+        SyncJob::new("bar", "baz", "baz"),
+        SyncJob::new("baz", "foo", "foo"),
+        SyncJob::new("baz", "bar", "bar"),
+        SyncJob::new("els", "foo", "foo"),
+        SyncJob::new("els", "bar", "bar"),
+        SyncJob::new("els", "baz", "baz"),
         // Indirect syncjobs
-        SyncJob {src: "baz".to_owned(), dst: "bar".to_owned(), issue: "qux".to_owned(), },
+        SyncJob::new("baz", "bar", "qux_"),
     ];
 
     // Check: The result should match the length and content of the expected sync jobs
@@ -139,7 +144,8 @@ fn test_build_syncjobs() {
     }
 
     // Check: The sync jobs don't contain disabled volumes
-    assert!(!syncjobs.contains(&SyncJob {src: "disabled".to_owned(), dst: "foo".to_owned(), issue: "foo".to_owned(), }));
+    assert!(!syncjobs.contains(&SyncJob::new("disabled", "foo", "foo")));
+
 }
 
 /// Test the execution of sync jobs between volumes
@@ -178,10 +184,10 @@ async fn test_execute_syncjobs() {
 
         assert!(traces.contains(&Some("Starting slides sync...".to_owned())));
         for needle in &[
-            "[foo -bar-> bar] MKDIR",
-            "[bar -foo-> foo] MKDIR",
-            "[foo -bar-> bar] MV",
-            "[bar -foo-> foo] MV",
+            "[foo -_-> bar] MKDIR",
+            "[bar -_-> foo] MKDIR",
+            "[foo -_-> bar] MV",
+            "[bar -_-> foo] MV",
         ] {
             assert!(traces.iter().any(|x| x.as_ref().unwrap().contains(needle)));
         }

@@ -69,6 +69,7 @@ fn process_all_configs(
 
                     rootsets.push(RootsetConfig { keyword, roots });
 
+                    // Yeah, only the trace of the last config file that defines it will prevail
                     if let Some(trace_fmt) = config.trace {
                         trace = generate_trace_path(&trace_fmt);
                     }
@@ -109,7 +110,7 @@ async fn main_w_args(args: &[String]) -> Result<()> {
     let non_safe = matches.get_flag("non-safe");
     let retries = matches.get_one::<u8>("retries").unwrap();
 
-    // Initialize the logging framework
+    // Initialize the logging framework if not already done
     #[cfg(not(test))]
     {
         let verbose = *matches.get_one::<u8>("verbose").unwrap_or(&0);
@@ -135,7 +136,7 @@ async fn main_w_args(args: &[String]) -> Result<()> {
 
     let (rootsets, trace) = process_all_configs(config_files.into_iter().collect())?;
 
-    slide(GlobalConfig {
+    let watcher = slide(GlobalConfig {
         rootsets,
         dry_run,
         trace,
@@ -146,14 +147,22 @@ async fn main_w_args(args: &[String]) -> Result<()> {
         safe: !non_safe,
         retries: *retries,
     })
-    .await
+    .await?;
+
+    loop {
+        while 
+    }
 }
 
 /// Entry point of the application.
 ///
 #[tokio::main]
 async fn main() -> Result<()> {
+
+    // Collect args
     let args = std::env::args().collect::<Vec<_>>();
+
+    // Await on main
     main_w_args(&args).await
 }
 

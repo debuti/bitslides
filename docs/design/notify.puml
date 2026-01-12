@@ -1,0 +1,37 @@
+@startuml
+
+title Notifier Component Diagram
+
+!define TASK_COLOR #LightBlue
+!define QUEUE_COLOR #LightGreen
+
+component [Notifier Task] as Notifier TASK_COLOR
+
+queue "Queue 1" as Q1 QUEUE_COLOR
+queue "Queue 2" as Q2 QUEUE_COLOR
+queue "Queue 3" as Q3 QUEUE_COLOR
+
+component [Syncjob Task A] as TaskA TASK_COLOR
+component [Syncjob Task B] as TaskB TASK_COLOR
+component [Syncjob Task C] as TaskC TASK_COLOR
+
+Notifier --> Q1 : tx
+Notifier --> Q2 : tx
+Notifier --> Q3 : tx
+
+Q1 --> TaskA : rx
+Q2 --> TaskB : rx
+Q3 --> TaskC : rx
+
+
+note right of Notifier
+    Central task that publishes
+    notifications to multiple mpsc queues
+end note
+
+note top of Q3
+    Each mpsc queue is consumed
+    by exactly one task
+end note
+
+@enduml
