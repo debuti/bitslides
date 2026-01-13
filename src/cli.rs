@@ -74,6 +74,14 @@ pub fn cli() -> Command {
                 .value_parser(value_parser!(u8))
                 .default_value("5"),
         )
+        .arg(
+            Arg::new("one-shot")
+                .long("one-shot")
+                .value_name("oneshot")
+                .help("Don't activate the daemon, but the one shot behavior. In this mode, the application will synchronize whatever is needad and exit.")
+                .action(ArgAction::SetTrue)
+                .required(false),
+        )
 }
 
 #[cfg(test)]

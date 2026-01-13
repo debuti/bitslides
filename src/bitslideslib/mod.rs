@@ -34,7 +34,7 @@ const DEFAULT_SLIDE_CONFIG_FILE: &str = ".slide.yml";
 pub async fn slide(config: GlobalConfig) -> Result<()> {
     log::debug!("Config: {config:#?}");
 
-    let mut tracer = None;
+    let mut tracer_task = None;
 
     let mut volumes = HashMap::new();
 
@@ -52,7 +52,8 @@ pub async fn slide(config: GlobalConfig) -> Result<()> {
 
     log::debug!("Sync jobs: {syncjobs:#?}");
 
-    let trace = match config.trace {
+    // If tracing is requested, it is done via another async task
+    let trace_handle = match config.trace {
         Some(trace) => {
             let mut file = OpenOptions::new()
                 .create(true)
@@ -61,7 +62,7 @@ pub async fn slide(config: GlobalConfig) -> Result<()> {
                 .await?;
             let (tx, mut rx) = mpsc::channel::<Option<String>>(32);
             // Handle the traces in a separate task
-            tracer = Some(tokio::spawn(async move {
+            tracer_task = Some(tokio::spawn(async move {
                 while let Some(message) = rx.recv().await {
                     let message = match message {
                         Some(m) => {
@@ -85,14 +86,33 @@ pub async fn slide(config: GlobalConfig) -> Result<()> {
         retries: 5,
     };
 
-    let result = execute_syncjobs(&volumes, &syncjobs, config.dry_run, trace, &move_req).await;
+    let result = execute_syncjobs(&volumes, &syncjobs, config.dry_run, trace_handle, &move_req).await;
 
-    if let Some(tracer) = tracer {
-        tracer.await?;
+    if let Some(tracer_task) = tracer_task {
+        tracer_task.await?;
     }
 
     result
 }
+
+
+1. Analizar los roots. 
+ 1.1. Poner un watch en los roots. Si algun nuevo directorio des/aparece, o si en windows des/aparece una nueva letra de unidad, se regeneran los syncjobs.
+  * El watch debe ser compatible con async. A ver!
+ 1.2. Para cada volumen, se pone un watch en su folder slides (o varios uno por subfolder, ver q conviene mas)
+  1.2.1. En el momento que salte el watch se ejecuta el syncjob. Validar que el syncjob no esta activo en ese momento.
+  1.2.2. Si el volumen desaparece, eliminar todos los watches.
+ 1.3. Reejecutar los syncjobs de vez en cuando periodicamente.
+ 1.4. Reanalizar periodicamente los roots
+
+ corner cases
+  * Un volumen desaparece en medio de un syncjob -> Report usuario y abortar syncjob
+
+
+
+
+
+
 
 /// Tidy up the volumes.
 ///
@@ -163,29 +183,27 @@ fn identify_slides(volume: &mut Volume) -> Result<()> {
     }
 
     for entry in subfolders?.flatten() {
-        let entry_metadata = entry.metadata();
-        if entry_metadata.is_err() {
-            continue;
-        }
-        if entry_metadata.unwrap().is_dir() {
-            let entry_fullpath = entry.path();
-            let entry_name = entry_fullpath
-                .file_name()
-                .unwrap()
-                .to_string_lossy()
-                .to_string();
+        if let Ok(entry_metadata) = entry.metadata() {
+            if entry_metadata.is_dir() {
+                let slide_fullpath = entry.path();
+                let slide_name = slide_fullpath
+                    .file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .to_string();
 
-            // Try to fetch the slide configuration if any
-            let slide_conf = {
-                let slide_conf =
-                    config::read_slide_config(entry_fullpath.join(DEFAULT_SLIDE_CONFIG_FILE));
-                match slide_conf {
-                    Ok(s) => s.route,
-                    Err(_) => None,
-                }
-            };
+                // Try to fetch the slide configuration if any
+                let slide_conf = {
+                    let slide_conf =
+                        config::SlideConfig::new(slide_fullpath.join(DEFAULT_SLIDE_CONFIG_FILE));
+                    match slide_conf {
+                        Ok(s) => s.route,
+                        Err(_) => None,
+                    }
+                };
 
-            volume.add_slide(Slide::new(entry_name, entry_fullpath, slide_conf));
+                volume.add_slide(Slide::new(slide_name, slide_fullpath, slide_conf));
+            }
         }
     }
 
@@ -210,6 +228,7 @@ pub fn identify_env(keyword: &str, roots: &[PathBuf]) -> Result<HashMap<String, 
         }
 
         // Under Windows we may have volumes as drives (e. C:, D:, etc)
+        // TODO: Add an option to opt-out of this analysis
         #[cfg(target_os = "windows")]
         {
             // Retrieve the drives using the windows api
@@ -293,10 +312,10 @@ fn build_syncjobs(volumes: &mut HashMap<String, Volume>) -> Result<SyncJobs> {
                         });
                         continue;
                     }
-                    log::info!("default_route {def_route_name} not available");
+                    log::info!("\"{dst_name}\" and default route \"{def_route_name}\" not available");
                 }
                 _ => {
-                    log::info!("{dst_name} not available and no default route");
+                    log::info!("\"{dst_name}\" not available and no default route");
                 }
             }
         }
@@ -323,13 +342,13 @@ async fn execute_syncjobs(
     volumes: &HashMap<String, Volume>,
     syncjobs: &SyncJobs,
     dry_run: bool,
-    tracer: Option<Sender<Option<String>>>,
+    trace_handle: Option<Sender<Option<String>>>,
     move_req: &MoveStrategy,
 ) -> Result<()> {
     let mut handles = Vec::new();
 
-    if let Some(tracer) = &tracer {
-        tracer
+    if let Some(trace_handle) = &trace_handle {
+        trace_handle
             .send(Some("Starting slides sync...".to_owned()))
             .await?;
     }
@@ -341,10 +360,10 @@ async fn execute_syncjobs(
             let syncjob = syncjob.clone();
             let src = volumes[&syncjob.src].slides[&syncjob.issue].path.clone();
             let dst = volumes[&syncjob.dst].slides[&syncjob.issue].path.clone();
-            let trace = tracer.clone();
+            let trace_handle = trace_handle.clone();
             let move_req = move_req.clone();
             let handle = tokio::spawn(async move {
-                if let Err(e) = sync_slide(&syncjob, &src, &dst, dry_run, trace, &move_req).await {
+                if let Err(e) = sync_slide(&syncjob, &src, &dst, dry_run, trace_handle, &move_req).await {
                     bail!("Error syncing {:?} -> {:?}: {:?}", src, dst, e);
                 }
                 Ok(())
@@ -357,8 +376,8 @@ async fn execute_syncjobs(
         }
     }
 
-    if let Some(tracer) = &tracer {
-        tracer.send(None).await?;
+    if let Some(trace_handle) = &trace_handle {
+        trace_handle.send(None).await?;
     }
 
     Ok(())
@@ -371,12 +390,12 @@ async fn sync_slide(
     src: &PathBuf,
     dst: &Path,
     dry_run: bool,
-    tracer: Option<Sender<Option<String>>>,
+    trace_handle: Option<Sender<Option<String>>>,
     move_req: &MoveStrategy,
 ) -> Result<()> {
     log::info!("Syncing {:?}", syncjob);
 
-    let tracer = tracer.map(|t| (t, syncjob));
+    let trace_handle = trace_handle.map(|t| (t, syncjob));
 
     let entries = src.read_dir();
     if entries.is_err() {
@@ -393,7 +412,7 @@ async fn sync_slide(
                 continue;
             }
             let dst = dst.join(entry.file_name());
-            fs::sync(&entry_path, &dst, dry_run, &tracer, move_req).await?;
+            fs::sync(&entry_path, &dst, dry_run, &trace_handle, move_req).await?;
         }
     }
 

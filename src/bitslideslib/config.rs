@@ -12,7 +12,7 @@ pub use checksums::Algorithm;
 pub struct RootsetConfig {
     /// Keyword to use for this rootset
     pub keyword: String,
-    /// List of root paths that will contain volumes
+    /// List of root absolute paths that will contain volumes
     pub roots: Vec<PathBuf>,
 }
 
@@ -40,6 +40,8 @@ pub struct GlobalConfig {
     pub rootsets: Vec<RootsetConfig>,
     /// If true, do not perform any filesystem operation
     pub dry_run: bool,
+    /// If true, do not enable the daemon mode
+    pub one_shot: bool,
     /// If provided, the path to a file where to write the trace
     pub trace: Option<PathBuf>,
     /// If provided, the algorithm to use for checksumming
@@ -64,15 +66,17 @@ pub struct VolumeConfig {
     pub disabled: Option<bool>,
 }
 
-/// Read a volume configuration file
-///
-pub fn read_volume_config<P>(file_path: P) -> Result<VolumeConfig>
-where
-    P: AsRef<Path>,
-{
-    let file_content = std::fs::read_to_string(file_path)?;
-    let config = serde_yaml::from_str(&file_content)?;
-    Ok(config)
+impl VolumeConfig {
+    /// Read a volume configuration file
+    ///
+    pub fn new<P>(file_path: P) -> Result<Self>
+    where
+        P: AsRef<Path>,
+    {
+        let file_content = std::fs::read_to_string(file_path)?;
+        let config = serde_yaml::from_str(&file_content)?;
+        Ok(config)
+    }
 }
 
 /// Slide configuration
@@ -85,13 +89,15 @@ pub struct SlideConfig {
     pub route: Option<String>,
 }
 
-/// Read a slide configuration file
-///
-pub fn read_slide_config<P>(file_path: P) -> Result<SlideConfig>
-where
-    P: AsRef<Path>,
-{
-    let file_content = std::fs::read_to_string(file_path)?;
-    let config = serde_yaml::from_str(&file_content)?;
-    Ok(config)
+impl SlideConfig {
+    /// Read a slide configuration file
+    ///
+    pub fn new<P>(file_path: P) -> Result<Self>
+    where
+        P: AsRef<Path>,
+    {
+        let file_content = std::fs::read_to_string(file_path)?;
+        let config = serde_yaml::from_str(&file_content)?;
+        Ok(config)
+    }
 }
