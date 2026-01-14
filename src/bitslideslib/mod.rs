@@ -7,7 +7,6 @@ use slide::Slide;
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
-    thread::JoinHandle,
 };
 use syncjob::{SyncJob, SyncJobs};
 use tokio::{
@@ -27,15 +26,26 @@ mod syncjob;
 mod volume;
 
 const DEFAULT_SLIDE_CONFIG_FILE: &str = ".slide.yml";
+const TRACE_CHANNEL_SIZE: usize = 32;
 
+#[allow(dead_code)]
 pub struct Token {
     watcher: RecommendedWatcher,
     handles: Vec<tokio::task::JoinHandle<Result<()>>>,
+    tracer: Option<tokio::task::JoinHandle<()>>,
 }
 
 impl Token {
-    fn new(watcher: RecommendedWatcher, handles: Vec<tokio::task::JoinHandle<Result<()>>>) -> Self {
-        Self { watcher, handles }
+    fn new(
+        watcher: RecommendedWatcher,
+        handles: Vec<tokio::task::JoinHandle<Result<()>>>,
+        tracer: Option<tokio::task::JoinHandle<()>>,
+    ) -> Self {
+        Self {
+            watcher,
+            handles,
+            tracer,
+        }
     }
 }
 
@@ -61,11 +71,21 @@ impl Token {
 pub async fn enough(token: Token) -> Result<()> {
     let watcher = token.watcher;
     let handles = token.handles;
+    let tracer = token.tracer;
 
+    // Drop the watcher first, so that the mpsc channels can be closed
+    // and the syncjob tasks can finish
     drop(watcher);
 
+    // Await all the handles. When every syncjob task finishes, its
+    // tracer mpsc channel will be closed
     for handle in handles {
-        handle.await?;
+        let _ = handle.await?;
+    }
+
+    // Await the tracer if any
+    if let Some(tracer) = tracer {
+        tracer.await?;
     }
 
     Ok(())
@@ -79,6 +99,7 @@ pub async fn enough(token: Token) -> Result<()> {
 pub async fn slide(config: GlobalConfig) -> Result<Token> {
     log::debug!("Config: {config:#?}");
 
+    // Maybe a tracer task handle
     let mut tracer = None;
 
     let mut volumes = HashMap::new();
@@ -106,7 +127,7 @@ pub async fn slide(config: GlobalConfig) -> Result<Token> {
                 .append(true)
                 .open(trace)
                 .await?;
-            let (tx, mut rx) = mpsc::channel::<Option<String>>(32);
+            let (tx, mut rx) = mpsc::channel::<Option<String>>(TRACE_CHANNEL_SIZE);
             // Handle the traces in a separate task
             tracer = Some(tokio::spawn(async move {
                 while let Some(message) = rx.recv().await {
@@ -135,11 +156,7 @@ pub async fn slide(config: GlobalConfig) -> Result<Token> {
     let (watcher, handles) =
         execute_syncjobs(&volumes, syncjobs, config.dry_run, trace, &move_req).await?;
 
-    if let Some(tracer) = tracer {
-        tracer.await?;
-    }
-
-    Ok(Token::new(watcher, handles))
+    Ok(Token::new(watcher, handles, tracer))
 }
 
 /// Tidy up the volumes.
@@ -409,7 +426,7 @@ async fn execute_syncjobs(
             log::debug!("Syncing {:?}", syncjob);
             let src = volumes[&syncjob.src].slides[&syncjob.dst].path.clone();
             let dst = volumes[&syncjob.via].slides[&syncjob.dst].path.clone();
-            let trace = tracer.clone();
+            let mut trace = tracer.clone();
             let move_req = move_req.clone();
 
             watcher.watch(&src, RecursiveMode::Recursive)?;
@@ -417,10 +434,8 @@ async fn execute_syncjobs(
             // Spawn a new tokio async task
             let handle = tokio::spawn(async move {
                 loop {
-                    if let Err(e) = sync_slide(
-                        &syncjob, &src, &dst, dry_run, /*FIXME: trace*/ None, &move_req,
-                    )
-                    .await
+                    if let Err(e) =
+                        sync_slide(&syncjob, &src, &dst, dry_run, &mut trace, &move_req).await
                     {
                         bail!("Error syncing {:?} -> {:?}: {:?}", src, dst, e);
                     }
@@ -444,12 +459,12 @@ async fn sync_slide(
     src: &PathBuf,
     dst: &Path,
     dry_run: bool,
-    tracer: Option<Sender<Option<String>>>,
+    tracer: &mut Option<Sender<Option<String>>>,
     move_req: &MoveStrategy,
 ) -> Result<()> {
     log::info!("Syncing {:?}", syncjob);
 
-    let tracer = tracer.map(|t| (t, syncjob));
+    let tracer = tracer.as_mut().map(|t| (t, syncjob));
 
     let entries = src.read_dir();
     if entries.is_err() {

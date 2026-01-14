@@ -1,5 +1,5 @@
 use anyhow::{bail, Result};
-use bitslides::{slide, Algorithm, CollisionPolicy, GlobalConfig, RootsetConfig};
+use bitslides::{slide, enough, Algorithm, CollisionPolicy, GlobalConfig, RootsetConfig};
 use chrono::prelude::*;
 use config::DEFAULT_KEYWORD;
 use std::path::PathBuf;
@@ -136,7 +136,7 @@ async fn main_w_args(args: &[String]) -> Result<()> {
 
     let (rootsets, trace) = process_all_configs(config_files.into_iter().collect())?;
 
-    let watcher = slide(GlobalConfig {
+    let keep_alive = slide(GlobalConfig {
         rootsets,
         dry_run,
         trace,
@@ -149,9 +149,9 @@ async fn main_w_args(args: &[String]) -> Result<()> {
     })
     .await?;
 
-    loop {
-        while 
-    }
+    tokio::signal::ctrl_c().await?;
+
+    enough(keep_alive).await
 }
 
 /// Entry point of the application.

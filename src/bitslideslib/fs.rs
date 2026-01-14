@@ -118,7 +118,7 @@ pub async fn sync<U: AsRef<Path>, V: AsRef<Path>>(
     from: U,
     to: V,
     dry_run: bool,
-    tracer: &Option<(Sender<Option<String>>, &SyncJob)>,
+    tracer: &Option<(&mut Sender<Option<String>>, &SyncJob)>,
     request: &MoveStrategy,
 ) -> Result<()> {
     let from = PathBuf::from(from.as_ref());
