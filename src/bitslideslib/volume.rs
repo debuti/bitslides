@@ -30,7 +30,7 @@ impl Volume {
     pub fn new(name: String, disabled: bool, keyword: &str, path: PathBuf) -> Self {
         Self {
             name,
-            disabled: disabled,
+            disabled,
             keyword: keyword.to_owned(),
             path,
             slides: HashMap::new(),

@@ -238,8 +238,8 @@ where
             }
         }
 
-        if dst_.is_some() {
-            dst_file = dst_.as_ref().unwrap();
+        if let Some(ref new_dst) = dst_ {
+            dst_file = new_dst;
         }
     }
 

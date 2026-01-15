@@ -14,19 +14,18 @@ pub struct SyncJob {
     pub via: String,
     /// Destination volume
     pub dst: String,
-    ///
+    /// Implementation details
     pub inner: SyncJobInner,
 }
 
 impl SyncJob {
-    ///
     pub fn new(src: &str, via: &str, dst: &str) -> Self {
         let (tx, rx) = mpsc::channel(1000);
         Self {
             src: src.to_string(),
             via: via.to_string(),
             dst: dst.to_string(),
-            inner: SyncJobInner { tx: Some(tx), rx: rx },
+            inner: SyncJobInner { tx: Some(tx), rx },
         }
     }
 

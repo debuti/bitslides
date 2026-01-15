@@ -407,7 +407,7 @@ async fn execute_syncjobs(
                 match event.kind {
                     EventKind::Modify(_) | EventKind::Create(_) | EventKind::Remove(_) => {
                         for (path, trigger) in &watcher_db {
-                            if event.paths.contains(&path) {
+                            if event.paths.contains(path) {
                                 let _ = trigger.blocking_send(());
                             }
                         }
@@ -440,7 +440,7 @@ async fn execute_syncjobs(
                         bail!("Error syncing {:?} -> {:?}: {:?}", src, dst, e);
                     }
                     // None is received when the mpsc::Sender is dropped
-                    if let None = syncjob.inner.rx.recv().await {
+                    if syncjob.inner.rx.recv().await.is_none() {
                         return Ok(());
                     }
                 }
