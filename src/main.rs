@@ -1,5 +1,5 @@
 use anyhow::{bail, Result};
-use bitslides::{slide, enough, Algorithm, CollisionPolicy, GlobalConfig, RootsetConfig};
+use bitslides::{enough, slide, Algorithm, CollisionPolicy, GlobalConfig, RootsetConfig};
 use chrono::prelude::*;
 use config::DEFAULT_KEYWORD;
 use std::path::PathBuf;
@@ -98,7 +98,10 @@ fn process_all_configs(
 ///
 /// This function gathers information and calls the bitslideslib fn.
 ///
-async fn main_w_args(args: &[String]) -> Result<()> {
+async fn main_w_args(
+    args: &[String],
+    shutdown_signal: tokio::sync::oneshot::Receiver<()>,
+) -> Result<()> {
     let matches = cli::cli().get_matches_from(args);
 
     // Get the configuration files
@@ -149,7 +152,8 @@ async fn main_w_args(args: &[String]) -> Result<()> {
     })
     .await?;
 
-    tokio::signal::ctrl_c().await?;
+    // Wait for shutdown signal (either from Ctrl+C handler or test)
+    shutdown_signal.await?;
 
     enough(keep_alive).await
 }
@@ -158,12 +162,25 @@ async fn main_w_args(args: &[String]) -> Result<()> {
 ///
 #[tokio::main]
 async fn main() -> Result<()> {
-
     // Collect args
     let args = std::env::args().collect::<Vec<_>>();
 
-    // Await on main
-    main_w_args(&args).await
+    // Create a oneshot channel for shutdown signal
+    let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
+
+    // Install custom Ctrl+C handler (cross-platform, not using tokio's signal)
+    // Wrap the sender in an Option so we can take it in the FnMut closure
+    let shutdown_tx = std::sync::Mutex::new(Some(shutdown_tx));
+    ctrlc::set_handler(move || {
+        log::info!("Received Ctrl+C, shutting down...");
+        if let Some(tx) = shutdown_tx.lock().unwrap().take() {
+            let _ = tx.send(());
+        }
+    })
+    .expect("Failed to set Ctrl+C handler");
+
+    // Await on main with shutdown signal
+    main_w_args(&args, shutdown_rx).await
 }
 
 #[cfg(test)]
@@ -193,11 +210,19 @@ trace: "{}/bitslides.%Y%M%d%H%M%S.log"
 
         let args = vec!["bitslides", "-c", config_file.to_str().unwrap()];
 
+        // Create a channel and spawn a task to send shutdown signal after a delay
+        let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
+        tokio::spawn(async move {
+            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+            let _ = shutdown_tx.send(());
+        });
+
         assert!(main_w_args(
             args.into_iter()
                 .map(|x| x.to_owned())
                 .collect::<Vec<String>>()
                 .as_slice(),
+            shutdown_rx,
         )
         .await
         .is_ok());
@@ -212,11 +237,20 @@ trace: "{}/bitslides.%Y%M%d%H%M%S.log"
 
         let args = vec!["bitslides", "-c", config_file.to_str().unwrap()];
 
+        // Create a channel and spawn a task to send shutdown signal after a delay
+        // (though the test will error out before reaching the signal wait)
+        let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
+        tokio::spawn(async move {
+            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+            let _ = shutdown_tx.send(());
+        });
+
         assert!(main_w_args(
             args.into_iter()
                 .map(|x| x.to_owned())
                 .collect::<Vec<String>>()
                 .as_slice(),
+            shutdown_rx,
         )
         .await
         .is_err());
@@ -226,11 +260,20 @@ trace: "{}/bitslides.%Y%M%d%H%M%S.log"
     async fn test_main_missing_config() {
         let args = vec!["bitslides", "-c", "not-to-be-found"];
 
+        // Create a channel and spawn a task to send shutdown signal after a delay
+        // (though the test will error out before reaching the signal wait)
+        let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
+        tokio::spawn(async move {
+            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+            let _ = shutdown_tx.send(());
+        });
+
         assert!(main_w_args(
             args.into_iter()
                 .map(|x| x.to_owned())
                 .collect::<Vec<String>>()
                 .as_slice(),
+            shutdown_rx,
         )
         .await
         .is_err());
@@ -256,11 +299,19 @@ trace: "{}/non-existing-folder/bitslides.log"
 
         let args = vec!["bitslides", "-c", config_file.to_str().unwrap()];
 
+        // Create a channel and spawn a task to send shutdown signal after a delay
+        let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
+        tokio::spawn(async move {
+            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+            let _ = shutdown_tx.send(());
+        });
+
         let result = main_w_args(
             args.into_iter()
                 .map(|x| x.to_owned())
                 .collect::<Vec<String>>()
                 .as_slice(),
+            shutdown_rx,
         )
         .await;
 
