@@ -194,7 +194,6 @@ async fn test_sync_directory() {
         sync(&src_dir, &dest_dir, false, &tracer, request)
             .await
             .unwrap();
-        println!("---");
 
         // Verify destination directory structure
         let dest_file_path = dest_dir.join("test.txt");
@@ -206,7 +205,13 @@ async fn test_sync_directory() {
         fs::remove_dir_all(&temp_dir).unwrap();
     }
 
-    handle.unwrap().await.unwrap();
+    // Clean up tracer
+    {
+        // Drop the tx channel to allow the tracer to finish
+        drop(tracer);
+        // Wait for the tracer task to finish
+        handle.unwrap().await.unwrap();
+    }
 }
 
 /// Test that nothing happens when the source directory is empty.
@@ -254,7 +259,13 @@ async fn test_sync_empty_directory() {
         assert_eq!(entries.count(), 0);
     }
 
-    handle.unwrap().await.unwrap();
+    // Clean up tracer
+    {
+        // Drop the tx channel to allow the tracer to finish
+        drop(tracer);
+        // Wait for the tracer task to finish
+        handle.unwrap().await.unwrap();
+    }
 }
 
 /// Test that a file belonging to a nested directory is copied from the source to the destination directory.
@@ -315,7 +326,13 @@ async fn test_sync_nested_directories() {
     assert!(!src_file_path.exists());
     assert!(!nested_dir.exists());
 
-    handle.unwrap().await.unwrap();
+    // Clean up tracer
+    {
+        // Drop the tx channel to allow the tracer to finish
+        drop(tracer);
+        // Wait for the tracer task to finish
+        handle.unwrap().await.unwrap();
+    }
 }
 
 /// Setup the environment for testing all move_file permutations.

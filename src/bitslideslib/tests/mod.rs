@@ -206,7 +206,6 @@ async fn test_execute_syncjobs() {
         ] {
             assert!(traces.contains(needle), "Missing trace: {}", needle);
         }
-        // assert!(traces.contains(&None));
     }
 
     // Check: The slides should be synchronized correctly
