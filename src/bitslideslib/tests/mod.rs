@@ -154,13 +154,15 @@ async fn test_execute_syncjobs() {
     // Prerequisite: Setup the test context
     let ctx = setup().unwrap();
 
+    // Prerequisite: Create a tracer that writes to a known location
+    let trace_path = ctx.temp_dir.path().join("test.trace");
+    let (tracer, handle) = tracer::Tracer::new(&Some(&trace_path)).await.unwrap();
+
     // Prerequisite: Identify the volumes in the root folders
     let mut volumes: HashMap<String, Volume> = identify_env("slides", &ctx.roots).unwrap();
 
     // Prerequisite: Build the sync jobs between the volumes
     let syncjobs = build_syncjobs(&mut volumes).unwrap();
-
-    let (tx, mut rx) = tokio::sync::mpsc::channel(32);
 
     // Action: Execute the sync jobs
     {
@@ -170,28 +172,41 @@ async fn test_execute_syncjobs() {
             check: None,
             retries: 5,
         };
-        execute_syncjobs(&volumes, &syncjobs, false, Some(tx), &move_req)
+        execute_syncjobs(&volumes, syncjobs, false, tracer, &move_req)
             .await
             .unwrap();
     }
 
     // Check: The tracer has traced some info
     {
-        let mut traces = Vec::new();
-        while let Some(info) = rx.recv().await {
-            traces.push(info);
+        // Force flush and close the tracer
+        handle.unwrap().await.unwrap();
+
+        let trace_content = std::fs::read_to_string(&trace_path).unwrap();
+        let traces: String = trace_content
+            .lines()
+            .filter(|line| !line.trim().is_empty())
+            .map(|line| line.to_owned())
+            .collect();
+
+        #[cfg(false)]
+        {
+            println!("Traces:");
+            for trace in traces.lines() {
+                println!("  {:?}", trace);
+            }
         }
 
-        assert!(traces.contains(&Some("Starting slides sync...".to_owned())));
         for needle in &[
+            "Starting slides sync...",
             "[foo -_-> bar] MKDIR",
             "[bar -_-> foo] MKDIR",
             "[foo -_-> bar] MV",
             "[bar -_-> foo] MV",
         ] {
-            assert!(traces.iter().any(|x| x.as_ref().unwrap().contains(needle)));
+            assert!(traces.contains(needle), "Missing trace: {}", needle);
         }
-        assert!(traces.contains(&None));
+        // assert!(traces.contains(&None));
     }
 
     // Check: The slides should be synchronized correctly
@@ -257,6 +272,10 @@ async fn test_execute_syncjobs_with_missing_source() {
     // Prerequisite: Setup the test context
     let ctx = setup().unwrap();
 
+    let (tracer, handle) = tracer::Tracer::new(&Some(&PathBuf::from("/dev/null")))
+        .await
+        .unwrap();
+
     // Prerequisite: Identify the volumes in the root folders
     let mut volumes = identify_env("slides", &ctx.roots).unwrap();
 
@@ -282,7 +301,7 @@ async fn test_execute_syncjobs_with_missing_source() {
             check: None,
             retries: 5,
         };
-        execute_syncjobs(&volumes, &syncjobs, false, None, &move_req).await
+        execute_syncjobs(&volumes, syncjobs, false, tracer, &move_req).await
     };
 
     // Verify that the sync jobs failed due to the missing source
@@ -290,4 +309,6 @@ async fn test_execute_syncjobs_with_missing_source() {
         result.is_err(),
         "Expected error due to missing source slide"
     );
+
+    handle.unwrap().await.unwrap();
 }

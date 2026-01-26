@@ -1,5 +1,4 @@
 use anyhow::{bail, Result};
-use chrono::prelude::*;
 use config::GlobalConfig;
 use fs::MoveStrategy;
 use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
@@ -9,24 +8,21 @@ use std::{
     path::{Path, PathBuf},
 };
 use syncjob::{SyncJob, SyncJobs};
-use tokio::{
-    fs::OpenOptions,
-    io::AsyncWriteExt,
-    sync::mpsc::{self, Sender},
-};
 use volume::Volume;
 
 #[cfg(target_os = "windows")]
 use std::ffi::CStr;
 
+use crate::bitslideslib::tracer::Tracer;
+
 pub mod config;
 mod fs;
 mod slide;
 mod syncjob;
+mod tracer;
 mod volume;
 
 const DEFAULT_SLIDE_CONFIG_FILE: &str = ".slide.yml";
-const TRACE_CHANNEL_SIZE: usize = 32;
 
 #[allow(dead_code)]
 pub struct Token {
@@ -100,7 +96,7 @@ pub async fn slide(config: GlobalConfig) -> Result<Token> {
     log::debug!("Config: {config:#?}");
 
     // Maybe a tracer task handle
-    let mut tracer = None;
+    let (trace, tracer) = Tracer::new(&config.trace.as_ref()).await?;
 
     let mut volumes = HashMap::new();
 
@@ -119,32 +115,6 @@ pub async fn slide(config: GlobalConfig) -> Result<Token> {
     let syncjobs = build_syncjobs(&mut volumes)?;
 
     log::debug!("Sync jobs: {syncjobs:#?}");
-
-    let trace = match config.trace {
-        Some(trace) => {
-            let mut file = OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(trace)
-                .await?;
-            let (tx, mut rx) = mpsc::channel::<Option<String>>(TRACE_CHANNEL_SIZE);
-            // Handle the traces in a separate task
-            tracer = Some(tokio::spawn(async move {
-                while let Some(message) = rx.recv().await {
-                    let message = match message {
-                        Some(m) => {
-                            format!("[{}] {}\n", Local::now().format("%Y-%m-%d %H:%M:%S"), m)
-                        }
-                        None => "".to_owned(),
-                    };
-                    // Best effort
-                    let _ = file.write_all(message.as_bytes()).await;
-                }
-            }));
-            Some(tx)
-        }
-        None => None,
-    };
 
     let move_req = MoveStrategy {
         collision: config.collision,
@@ -383,14 +353,11 @@ async fn execute_syncjobs(
     volumes: &HashMap<String, Volume>,
     mut syncjobs: SyncJobs,
     dry_run: bool,
-    tracer: Option<Sender<Option<String>>>,
+    tracer: Tracer,
     move_req: &MoveStrategy,
 ) -> Result<(RecommendedWatcher, Vec<tokio::task::JoinHandle<Result<()>>>)> {
-    if let Some(tracer) = &tracer {
-        tracer
-            .send(Some("Starting slides sync...".to_owned()))
-            .await?;
-    }
+    
+    tracer.log("Init", "Starting slides sync...").await?;
 
     let watcher_db = syncjobs
         .iter_mut()
@@ -426,7 +393,7 @@ async fn execute_syncjobs(
             log::debug!("Syncing {:?}", syncjob);
             let src = volumes[&syncjob.src].slides[&syncjob.dst].path.clone();
             let dst = volumes[&syncjob.via].slides[&syncjob.dst].path.clone();
-            let mut trace = tracer.clone();
+            let mut trace = tracer.annotate_syncjob(&syncjob);
             let move_req = move_req.clone();
 
             watcher.watch(&src, RecursiveMode::Recursive)?;
@@ -459,12 +426,10 @@ async fn sync_slide(
     src: &PathBuf,
     dst: &Path,
     dry_run: bool,
-    tracer: &mut Option<Sender<Option<String>>>,
+    tracer: &mut Tracer,
     move_req: &MoveStrategy,
 ) -> Result<()> {
     log::info!("Syncing {:?}", syncjob);
-
-    let tracer = tracer.as_mut().map(|t| (t, syncjob));
 
     let entries = src.read_dir();
     if entries.is_err() {
@@ -482,7 +447,7 @@ async fn sync_slide(
                 continue;
             }
             let dst = dst.join(entry.file_name());
-            fs::sync(&entry_path, &dst, dry_run, &tracer, move_req).await?;
+            fs::sync(&entry_path, &dst, dry_run, tracer, move_req).await?;
         }
 
         // TODO: Instead of directly synching, create a watcher

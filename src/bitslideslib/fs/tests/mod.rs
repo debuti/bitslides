@@ -1,3 +1,5 @@
+use crate::bitslideslib::tracer;
+
 use super::*;
 
 use std::fs::{self, File};
@@ -177,6 +179,10 @@ async fn test_sync_directory() {
         },
     ];
 
+    let (tracer, handle) = tracer::Tracer::new(&Some(&PathBuf::from("/dev/null")))
+        .await
+        .unwrap();
+
     for request in &requests {
         // Create source directory structure
         fs::create_dir_all(&src_dir).unwrap();
@@ -185,7 +191,7 @@ async fn test_sync_directory() {
         writeln!(src_file, "Hello, world!").unwrap();
 
         // Perform copy
-        sync(&src_dir, &dest_dir, false, &None, request)
+        sync(&src_dir, &dest_dir, false, &tracer, request)
             .await
             .unwrap();
         println!("---");
@@ -199,11 +205,17 @@ async fn test_sync_directory() {
         // Clean up
         fs::remove_dir_all(&temp_dir).unwrap();
     }
+
+    handle.unwrap().await.unwrap();
 }
 
 /// Test that nothing happens when the source directory is empty.
 #[tokio::test]
 async fn test_sync_empty_directory() {
+    let (tracer, handle) = tracer::Tracer::new(&Some(&PathBuf::from("/dev/null")))
+        .await
+        .unwrap();
+
     // root
     // ├── src
     // └── dest
@@ -222,7 +234,7 @@ async fn test_sync_empty_directory() {
         &src_dir,
         &dest_dir,
         false,
-        &None,
+        &tracer,
         &MoveStrategy {
             collision: CollisionPolicy::Fail,
             safe: false,
@@ -241,11 +253,17 @@ async fn test_sync_empty_directory() {
         let entries = fs::read_dir(&dest_dir).unwrap();
         assert_eq!(entries.count(), 0);
     }
+
+    handle.unwrap().await.unwrap();
 }
 
 /// Test that a file belonging to a nested directory is copied from the source to the destination directory.
 #[tokio::test]
 async fn test_sync_nested_directories() {
+    let (tracer, handle) = tracer::Tracer::new(&Some(&PathBuf::from("/dev/null")))
+        .await
+        .unwrap();
+
     // root
     // ├── src
     // │   └── nested
@@ -267,7 +285,7 @@ async fn test_sync_nested_directories() {
         &src_dir,
         &dest_dir,
         false,
-        &None,
+        &tracer,
         &MoveStrategy {
             collision: CollisionPolicy::Fail,
             safe: false,
@@ -296,6 +314,8 @@ async fn test_sync_nested_directories() {
     // Check: Verify source directory structure is unchanged
     assert!(!src_file_path.exists());
     assert!(!nested_dir.exists());
+
+    handle.unwrap().await.unwrap();
 }
 
 /// Setup the environment for testing all move_file permutations.
