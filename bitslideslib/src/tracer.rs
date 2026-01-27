@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use anyhow::Result;
+use anyhow::{bail, Result};
 use chrono::Local;
 use tokio::{
     fs::OpenOptions,
@@ -9,8 +9,6 @@ use tokio::{
     task::JoinHandle,
 };
 
-use crate::syncjob::SyncJob;
-
 /// Tracer abstraction
 ///
 /// The tracer is a logging utility that asynchronously writes trace messages to a file.
@@ -18,7 +16,7 @@ use crate::syncjob::SyncJob;
 ///
 pub struct Tracer {
     tx: Option<Sender<String>>,
-    syncjob_str: Option<String>,
+    author: Option<String>,
 }
 
 impl Tracer {
@@ -45,42 +43,55 @@ impl Tracer {
                 Ok((
                     Self {
                         tx: Some(tx),
-                        syncjob_str: None,
+                        author: None,
                     },
                     Some(handle),
                 ))
             }
+            // The user may want to disable tracing by not providing a path
             None => Ok((
                 Self {
                     tx: None,
-                    syncjob_str: None,
+                    author: None,
                 },
                 None,
             )),
         }
     }
 
-    pub fn annotate_syncjob(&self, syncjob: &SyncJob) -> Self {
+    pub fn annotate_author(&self, author: String) -> Self {
         Self {
             tx: self.tx.clone(),
-            syncjob_str: Some(format!("{:?}", syncjob)),
+            author: Some(author),
         }
     }
 
-    pub async fn log(&self, operation: &str, details: &str) -> Result<()> {
+    fn compose_log_message(&self, operation: &str, details: &str) -> Result<String> {
+        let author = if let Some(author) = &self.author {
+            author
+        } else {
+            bail!("Tracer author not set")
+        };
+        Ok(format!(
+            "[{}] [{}] {} {}",
+            Local::now().format("%Y-%m-%d %H:%M:%S"),
+            author,
+            operation,
+            details
+        ))
+    }
+
+    pub async fn async_log(&self, operation: &str, details: &str) -> Result<()> {
         if let Some(tx) = &self.tx {
-            tx.send(format!(
-                "[{}] [{}] {} {}",
-                Local::now().format("%Y-%m-%d %H:%M:%S"),
-                if let Some(syncjob) = &self.syncjob_str {
-                    syncjob
-                } else {
-                    "unknown"
-                },
-                operation,
-                details
-            ))
-            .await?;
+            tx.send(self.compose_log_message(operation, details)?)
+                .await?;
+        }
+        Ok(())
+    }
+
+    pub fn sync_log(&self, operation: &str, details: &str) -> Result<()> {
+        if let Some(tx) = &self.tx {
+            tx.blocking_send(self.compose_log_message(operation, details)?)?;
         }
         Ok(())
     }

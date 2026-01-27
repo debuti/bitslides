@@ -341,8 +341,6 @@ async fn execute_syncjobs(
     tracer: Tracer,
     move_req: &MoveStrategy,
 ) -> Result<(RecommendedWatcher, Vec<tokio::task::JoinHandle<Result<()>>>)> {
-    tracer.log("Init", "Starting slides sync...").await?;
-
     let mut watcher_db = Vec::new();
     for syncjob in syncjobs.iter_mut() {
         let path = volumes[&syncjob.src].slides[&syncjob.dst].path.clone();
@@ -354,29 +352,36 @@ async fn execute_syncjobs(
         watcher_db.push((path, trigger));
     }
 
-    let mut watcher = notify::recommended_watcher(
-        move |res: std::result::Result<notify::Event, notify::Error>| {
-            if let Ok(event) = res {
-                match event.kind {
-                    EventKind::Modify(_) | EventKind::Create(_) | EventKind::Remove(_) => {
-                        for (path, trigger) in &watcher_db {
-                            // Check if any event path is within the watched directory
-                            for event_path in &event.paths {
-                                if event_path.starts_with(path) {
-                                    if trigger.capacity() > 0 {
-                                        let _ = trigger.blocking_send(());
+    let mut watcher = {
+        let tracer = tracer.annotate_author("Watcher".to_string());
+        tracer.async_log("Init", "Starting slides sync...").await?;
+
+        notify::recommended_watcher(
+            move |res: std::result::Result<notify::Event, notify::Error>| {
+                if let Ok(event) = res {
+                    match event.kind {
+                        EventKind::Modify(_) | EventKind::Create(_) | EventKind::Remove(_) => {
+                            let _ = tracer
+                                .sync_log("Event", &format!("Filesystem event: {:?} ", event));
+                            for (path, trigger) in &watcher_db {
+                                // Check if any event path is within the watched directory
+                                for event_path in &event.paths {
+                                    if event_path.starts_with(path) {
+                                        if trigger.capacity() > 0 {
+                                            let _ = trigger.blocking_send(());
+                                        }
+                                        // Otherwise skip this event, its ok
+                                        break;
                                     }
-                                    // Otherwise skip this event, its ok
-                                    break;
                                 }
                             }
                         }
+                        _ => {}
                     }
-                    _ => {}
                 }
-            }
-        },
-    )?;
+            },
+        )?
+    };
 
     // TODO: Measure the next block
     {
@@ -386,7 +391,7 @@ async fn execute_syncjobs(
             log::debug!("Syncing {:?}", syncjob);
             let src = volumes[&syncjob.src].slides[&syncjob.dst].path.clone();
             let dst = volumes[&syncjob.via].slides[&syncjob.dst].path.clone();
-            let mut trace = tracer.annotate_syncjob(&syncjob);
+            let mut trace = tracer.annotate_author(format!("{:?}", syncjob));
             let move_req = move_req.clone();
 
             watcher.watch(&src, RecursiveMode::Recursive)?;
@@ -410,6 +415,8 @@ async fn execute_syncjobs(
 
         Ok((watcher, handles))
     }
+
+    // The anonymous tracer will be dropped here
 }
 
 /// Sync the contents of a slide.

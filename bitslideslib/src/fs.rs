@@ -149,7 +149,7 @@ pub async fn sync<U: AsRef<Path>, V: AsRef<Path>>(
         // Check if the destination exists, otherwise create it
         if std::fs::metadata(&dst).is_err() {
             log::info!("Mkdir: {:?}", dst);
-            tracer.log("MKDIR", &format!("{:?}", &dst)).await?;
+            tracer.async_log("MKDIR", &format!("{:?}", &dst)).await?;
 
             if !dry_run {
                 std::fs::create_dir_all(&dst)?;
@@ -172,7 +172,7 @@ pub async fn sync<U: AsRef<Path>, V: AsRef<Path>>(
                 Some(filename) => {
                     log::info!("Move: {:?} -> {:?}", &src, &dst);
                     tracer
-                        .log("MV", &format!("{:?} -> {:?}", &src, &dst))
+                        .async_log("MV", &format!("{:?} -> {:?}", &src, &dst))
                         .await?;
 
                     let dst = dst.join(filename);

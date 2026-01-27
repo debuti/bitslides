@@ -179,9 +179,15 @@ async fn test_sync_directory() {
         },
     ];
 
-    let (tracer, handle) = tracer::Tracer::new(&Some(&PathBuf::from("/dev/null")))
-        .await
-        .unwrap();
+    let (tracer, handle) = {
+        let (tracer, handle) = tracer::Tracer::new(&Some(&PathBuf::from("/dev/null")))
+            .await
+            .unwrap();
+        (
+            tracer.annotate_author("test_sync_directory".to_owned()),
+            handle.expect("Should have a handle"),
+        )
+    };
 
     for request in &requests {
         // Create source directory structure
@@ -210,16 +216,22 @@ async fn test_sync_directory() {
         // Drop the tx channel to allow the tracer to finish
         drop(tracer);
         // Wait for the tracer task to finish
-        handle.unwrap().await.unwrap();
+        handle.await.unwrap();
     }
 }
 
 /// Test that nothing happens when the source directory is empty.
 #[tokio::test]
 async fn test_sync_empty_directory() {
-    let (tracer, handle) = tracer::Tracer::new(&Some(&PathBuf::from("/dev/null")))
-        .await
-        .unwrap();
+    let (tracer, handle) = {
+        let (tracer, handle) = tracer::Tracer::new(&Some(&PathBuf::from("/dev/null")))
+            .await
+            .unwrap();
+        (
+            tracer.annotate_author("test_sync_empty_directory".to_owned()),
+            handle.expect("Should have a handle"),
+        )
+    };
 
     // root
     // ├── src
@@ -264,16 +276,22 @@ async fn test_sync_empty_directory() {
         // Drop the tx channel to allow the tracer to finish
         drop(tracer);
         // Wait for the tracer task to finish
-        handle.unwrap().await.unwrap();
+        handle.await.unwrap();
     }
 }
 
 /// Test that a file belonging to a nested directory is copied from the source to the destination directory.
 #[tokio::test]
 async fn test_sync_nested_directories() {
-    let (tracer, handle) = tracer::Tracer::new(&Some(&PathBuf::from("/dev/null")))
-        .await
-        .unwrap();
+    let (tracer, handle) = {
+        let (tracer, handle) = tracer::Tracer::new(&Some(&PathBuf::from("/dev/null")))
+            .await
+            .unwrap();
+        (
+            tracer.annotate_author("test_sync_nested_directories".to_owned()),
+            handle.expect("Should have a handle"),
+        )
+    };
 
     // root
     // ├── src
@@ -331,7 +349,7 @@ async fn test_sync_nested_directories() {
         // Drop the tx channel to allow the tracer to finish
         drop(tracer);
         // Wait for the tracer task to finish
-        handle.unwrap().await.unwrap();
+        handle.await.unwrap();
     }
 }
 

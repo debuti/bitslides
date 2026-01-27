@@ -157,7 +157,13 @@ async fn test_execute_syncjobs() {
 
     // Prerequisite: Create a tracer that writes to a known location
     let trace_path = ctx.temp_dir.path().join("test.trace");
-    let (tracer, handle) = tracer::Tracer::new(&Some(&trace_path)).await.unwrap();
+    let (tracer, handle) = {
+        let (tracer, handle) = tracer::Tracer::new(&Some(&trace_path)).await.unwrap();
+        (
+            tracer.annotate_author("test_execute_syncjobs".to_owned()),
+            handle.expect("Should have a handle"),
+        )
+    };
 
     // Prerequisite: Identify the volumes in the root folders
     let mut volumes: HashMap<String, Volume> = identify_env("slides", &ctx.roots).unwrap();
@@ -181,7 +187,7 @@ async fn test_execute_syncjobs() {
     // Check: The tracer has traced some info
     {
         // Force flush and close the tracer
-        handle.unwrap().await.unwrap();
+        handle.await.unwrap();
 
         let trace_content = std::fs::read_to_string(&trace_path).unwrap();
         let traces: String = trace_content
@@ -272,9 +278,15 @@ async fn test_execute_syncjobs_with_missing_source() {
     // Prerequisite: Setup the test context
     let ctx = setup().unwrap();
 
-    let (tracer, handle) = tracer::Tracer::new(&Some(&PathBuf::from("/dev/null")))
-        .await
-        .unwrap();
+    let (tracer, handle) = {
+        let (tracer, handle) = tracer::Tracer::new(&Some(&PathBuf::from("/dev/null")))
+            .await
+            .unwrap();
+        (
+            tracer.annotate_author("test_execute_syncjobs_with_missing_source".to_owned()),
+            handle.expect("Should have a handle"),
+        )
+    };
 
     // Prerequisite: Identify the volumes in the root folders
     let mut volumes = identify_env("slides", &ctx.roots).unwrap();
