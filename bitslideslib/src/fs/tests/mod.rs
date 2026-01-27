@@ -150,6 +150,15 @@ async fn test_sync_directory() {
     let src_dir = temp_dir.path().join("src");
     let dest_dir = temp_dir.path().join("dest");
 
+    let (tracer, handle) = {
+        let trace_path = temp_dir.path().join("test.trace");
+        let (tracer, handle) = tracer::Tracer::new(&Some(&trace_path)).await.unwrap();
+        (
+            tracer.annotate_author("test_sync_directory".to_owned()),
+            handle.expect("Should have a handle"),
+        )
+    };
+
     let requests = [
         MoveStrategy {
             collision: CollisionPolicy::Fail,
@@ -178,16 +187,6 @@ async fn test_sync_directory() {
             retries: 1,
         },
     ];
-
-    let (tracer, handle) = {
-        let (tracer, handle) = tracer::Tracer::new(&Some(&PathBuf::from("/dev/null")))
-            .await
-            .unwrap();
-        (
-            tracer.annotate_author("test_sync_directory".to_owned()),
-            handle.expect("Should have a handle"),
-        )
-    };
 
     for request in &requests {
         // Create source directory structure
@@ -223,22 +222,21 @@ async fn test_sync_directory() {
 /// Test that nothing happens when the source directory is empty.
 #[tokio::test]
 async fn test_sync_empty_directory() {
-    let (tracer, handle) = {
-        let (tracer, handle) = tracer::Tracer::new(&Some(&PathBuf::from("/dev/null")))
-            .await
-            .unwrap();
-        (
-            tracer.annotate_author("test_sync_empty_directory".to_owned()),
-            handle.expect("Should have a handle"),
-        )
-    };
-
     // root
     // ├── src
     // └── dest
     let temp_dir = tempdir().unwrap();
     let src_dir = temp_dir.path().join("src");
     let dest_dir = temp_dir.path().join("dest");
+
+    let (tracer, handle) = {
+        let trace_path = temp_dir.path().join("test.trace");
+        let (tracer, handle) = tracer::Tracer::new(&Some(&trace_path)).await.unwrap();
+        (
+            tracer.annotate_author("test_sync_empty_directory".to_owned()),
+            handle.expect("Should have a handle"),
+        )
+    };
 
     // Prerequisite: Create empty source directory
     fs::create_dir(&src_dir).unwrap();
@@ -283,16 +281,6 @@ async fn test_sync_empty_directory() {
 /// Test that a file belonging to a nested directory is copied from the source to the destination directory.
 #[tokio::test]
 async fn test_sync_nested_directories() {
-    let (tracer, handle) = {
-        let (tracer, handle) = tracer::Tracer::new(&Some(&PathBuf::from("/dev/null")))
-            .await
-            .unwrap();
-        (
-            tracer.annotate_author("test_sync_nested_directories".to_owned()),
-            handle.expect("Should have a handle"),
-        )
-    };
-
     // root
     // ├── src
     // │   └── nested
@@ -302,6 +290,15 @@ async fn test_sync_nested_directories() {
     let src_dir = temp_dir.path().join("src");
     let nested_dir = src_dir.join("nested");
     let dest_dir = temp_dir.path().join("dest");
+
+    let (tracer, handle) = {
+        let trace_path = temp_dir.path().join("test.trace");
+        let (tracer, handle) = tracer::Tracer::new(&Some(&trace_path)).await.unwrap();
+        (
+            tracer.annotate_author("test_sync_nested_directories".to_owned()),
+            handle.expect("Should have a handle"),
+        )
+    };
 
     // Prerequisite: Create nested directory structure
     fs::create_dir_all(&nested_dir).unwrap();

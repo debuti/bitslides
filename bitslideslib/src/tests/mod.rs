@@ -279,9 +279,8 @@ async fn test_execute_syncjobs_with_missing_source() {
     let ctx = setup().unwrap();
 
     let (tracer, handle) = {
-        let (tracer, handle) = tracer::Tracer::new(&Some(&PathBuf::from("/dev/null")))
-            .await
-            .unwrap();
+        let trace_path = ctx.temp_dir.path().join("test.trace");
+        let (tracer, handle) = tracer::Tracer::new(&Some(&trace_path)).await.unwrap();
         (
             tracer.annotate_author("test_execute_syncjobs_with_missing_source".to_owned()),
             handle.expect("Should have a handle"),
