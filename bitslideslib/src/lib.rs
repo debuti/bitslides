@@ -27,7 +27,7 @@ const DEFAULT_SLIDE_CONFIG_FILE: &str = ".slide.yml";
 
 #[allow(dead_code)]
 pub struct Token {
-    /// Watcher OS task handle. Dropped first to force the syncjob tasks to end. 
+    /// Watcher OS task handle. Dropped first to force the syncjob tasks to end.
     watcher: RecommendedWatcher,
     handles: Vec<tokio::task::JoinHandle<Result<()>>>,
     tracer: Option<tokio::task::JoinHandle<()>>,
@@ -341,7 +341,6 @@ async fn execute_syncjobs(
     tracer: Tracer,
     move_req: &MoveStrategy,
 ) -> Result<(RecommendedWatcher, Vec<tokio::task::JoinHandle<Result<()>>>)> {
-    
     tracer.log("Init", "Starting slides sync...").await?;
 
     let watcher_db = syncjobs

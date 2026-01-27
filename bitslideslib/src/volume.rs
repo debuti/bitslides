@@ -7,7 +7,7 @@ use std::{collections::HashMap, path::PathBuf};
 pub const DEFAULT_VOLUME_CONFIG_FILE: &str = ".volume.yml";
 
 /// Volume representation.
-/// 
+///
 /// A volume is a storage unit that contains a slides folder (or the chosen keyword).
 ///
 #[derive(Debug)]

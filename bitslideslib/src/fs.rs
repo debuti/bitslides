@@ -3,9 +3,7 @@ use std::path::{Path, PathBuf};
 
 use crate::tracer::Tracer;
 
-use super::{
-    config::{Algorithm, CollisionPolicy},
-};
+use super::config::{Algorithm, CollisionPolicy};
 
 /// Move request parameters.
 ///

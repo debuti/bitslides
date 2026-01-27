@@ -2,8 +2,8 @@ mod common;
 
 use crate::CollisionPolicy;
 
-use super::*;
 use super::config::{GlobalConfig, RootsetConfig};
+use super::*;
 use checksums::{hash_file, Algorithm};
 use pretty_assertions::assert_eq;
 
@@ -314,7 +314,7 @@ async fn test_execute_syncjobs_with_missing_source() {
 }
 
 /// Test the real-time file monitoring behavior
-/// 
+///
 /// This test verifies that the file watcher correctly detects changes in subdirectories
 /// and triggers synchronization between volumes.
 #[tokio::test]
@@ -354,10 +354,10 @@ async fn test_file_monitoring_behavior() {
         .join("foo")
         .join("test_monitoring");
     std::fs::create_dir(&test_dir).unwrap();
-    
+
     // Give the watcher time to detect the directory creation
     tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-    
+
     let new_file_path = test_dir.join("new_test_file.txt");
     std::fs::write(&new_file_path, b"Hello, monitoring test!").unwrap();
 
@@ -385,8 +385,7 @@ async fn test_file_monitoring_behavior() {
 
     let synced_content = std::fs::read(&synced_file_path).unwrap();
     assert_eq!(
-        synced_content,
-        b"Hello, monitoring test!",
+        synced_content, b"Hello, monitoring test!",
         "Synchronized file content should match"
     );
 

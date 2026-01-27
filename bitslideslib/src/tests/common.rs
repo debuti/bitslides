@@ -120,14 +120,18 @@ fn install_scenario(scenario: &TestFolder, tempdir: tempfile::TempDir) -> Result
 }
 
 /// Sets up a test context for unit tests.
-/// 
+///
 /// > Some minor nomenclature: Slides ending in underscore means they are not present. This way its easier to read.
 ///
 pub(crate) fn setup() -> Result<TestContext> {
-// Print all environment variables.
-for (key, value) in std::env::vars() {
-    println!("{key}: {value}");
-}
+    #[cfg(false)]
+    {
+        // Print all environment variables.
+        for (key, value) in std::env::vars() {
+            println!("{key}: {value}");
+        }
+    }
+
     let _ = TermLogger::init(
         // LevelFilter::Trace,
         LevelFilter::Off,
