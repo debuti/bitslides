@@ -364,33 +364,8 @@ async fn test_file_monitoring_behavior() {
     // Wait for the file change to be detected and synced
     tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
 
-    // Check: Verify the directory and file were synchronized to the DESTINATION volume
-    let synced_dir = ctx.roots[0]
-        .join("foo")
-        .join("slides")
-        .join("foo")
-        .join("test_monitoring");
-    assert!(
-        synced_dir.exists(),
-        "Directory should be synchronized to the destination: {:?}",
-        synced_dir
-    );
-
-    let synced_file_path = synced_dir.join("new_test_file.txt");
-    assert!(
-        synced_file_path.exists(),
-        "File should be synchronized to the destination: {:?}",
-        synced_file_path
-    );
-
-    let synced_content = std::fs::read(&synced_file_path).unwrap();
-    assert_eq!(
-        synced_content, b"Hello, monitoring test!",
-        "Synchronized file content should match"
-    );
-
     // Check: Verify trace contains the file operations
-    {
+    let trace_content ={
         // Clean shutdown to flush tracer
         enough(token).await.unwrap();
 
@@ -405,5 +380,36 @@ async fn test_file_monitoring_behavior() {
             trace_content.contains("new_test_file.txt"),
             "Trace should contain the new file"
         );
-    }
+
+        trace_content
+    };
+
+    // Check: Verify the directory and file were synchronized to the DESTINATION volume
+    let synced_dir = ctx.roots[0]
+        .join("foo")
+        .join("slides")
+        .join("foo")
+        .join("test_monitoring");
+    // assert!(
+    //     synced_dir.exists(),
+    //     "Directory should be synchronized to the destination: {:?}",
+    //     synced_dir
+    // );
+
+    // Check: Verify the file was synchronized to the volume
+    let synced_file_path = synced_dir.join("new_test_file.txt");
+    assert!(
+        synced_file_path.exists(),
+        "File should be synchronized to the destination: {:?}. trace content: {}",
+        synced_file_path,
+        trace_content
+    );
+
+    // Check: Verify the content of the synchronized file
+    let synced_content = std::fs::read(&synced_file_path).unwrap();
+    assert_eq!(
+        synced_content, b"Hello, monitoring test!",
+        "Synchronized file content should match"
+    );
+
 }
