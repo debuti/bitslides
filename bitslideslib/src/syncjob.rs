@@ -22,7 +22,7 @@ pub(crate) struct SyncJob {
 }
 
 /// Internal structure holding the synchronization trigger channel.
-/// 
+///
 /// There is one sender and one receiver per SyncJob. The sender is used to trigger
 /// synchronization events from the notification system, while the receiver listens for these triggers.
 ///
@@ -55,22 +55,22 @@ impl SyncJob {
     }
 
     /// Takes the trigger sender from the sync job.
-    /// 
+    ///
     /// This method consumes the sender, allowing external components to trigger synchronization events.
-    /// 
+    ///
     /// # Returns
-    /// 
+    ///
     /// An `Option` containing the `Sender<()>` if it was available, or `None` if it has already been taken.
     pub(crate) fn take_trigger(&mut self) -> Option<tokio::sync::mpsc::Sender<()>> {
         self.inner.tx.take()
     }
 
     /// Borrows a mutable reference to the receiver.
-    /// 
+    ///
     /// This allows external components to listen for synchronization triggers.
-    /// 
+    ///
     /// # Returns
-    /// 
+    ///
     /// A mutable reference to the `Receiver<()>`.
     pub(crate) fn borrow_receiver(&mut self) -> &mut tokio::sync::mpsc::Receiver<()> {
         &mut self.inner.rx

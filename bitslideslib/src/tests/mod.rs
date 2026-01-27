@@ -374,11 +374,13 @@ async fn test_file_monitoring_behavior() {
         // Look for evidence of the directory and file operations in traces
         assert!(
             trace_content.contains("test_monitoring"),
-            "Trace should contain the new directory. Trace content: {}", trace_content
+            "Trace should contain the new directory. Trace content: {}",
+            trace_content
         );
         assert!(
             trace_content.contains("new_test_file.txt"),
-            "Trace should contain the new file. Trace content: {}", trace_content
+            "Trace should contain the new file. Trace content: {}",
+            trace_content
         );
 
         trace_content

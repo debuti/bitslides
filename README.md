@@ -134,4 +134,5 @@ route: "myothervol"
  * **Mobile App**: Companion app for Android/iOS to manage devices and monitor synchronization remotely.
 
 ## Contributions Welcome
+
 `bitslides` is an open-source project! If you’d like to contribute, head over to the [GitHub repository](https://github.com/debuti/bitslides). Whether it’s fixing bugs, suggesting features, or improving documentation, your help is appreciated.
