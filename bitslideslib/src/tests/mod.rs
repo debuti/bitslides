@@ -322,7 +322,7 @@ async fn test_execute_syncjobs_with_missing_source() {
         "Expected error due to missing source slide"
     );
 
-    handle.unwrap().await.unwrap();
+    handle.await.unwrap();
 }
 
 /// Test the real-time file monitoring behavior
