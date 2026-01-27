@@ -79,18 +79,18 @@ impl SyncJobs {
     pub fn new(jobs: Vec<SyncJob>) -> Self {
         Self { inner: jobs }
     }
-    
+
     pub fn sort_by_priority(&mut self) {
         // Sort by: direct routes first, then indirect
         self.inner.sort_by_key(|job| {
             if job.via == job.dst { 0 } else { 1 }
         });
     }
-    
+
     pub fn into_iter(self) -> impl Iterator<Item = SyncJob> {
         self.inner.into_iter()
     }
-    
+
     pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut SyncJob> {
         self.inner.iter_mut()
     }
@@ -110,7 +110,7 @@ impl VolumePath {
     pub fn slides_dir(&self, keyword: &str) -> PathBuf {
         self.0.join(keyword)
     }
-    
+
     pub fn slide_path(&self, keyword: &str, slide_name: &str) -> PathBuf {
         self.slides_dir(keyword).join(slide_name)
     }
@@ -169,7 +169,7 @@ const DEFAULT_SAFE_MODE: bool = false;
 const SYNC_TRIGGER_CHANNEL_SIZE: usize = 1000;
 ```
 
-### **5.2 Make collision/check policies configurable** 
+### **5.2 Make collision/check policies configurable**
 Lines 143-145 in main.rs are marked as FIXME - they should come from config files.
 
 ---
@@ -213,9 +213,9 @@ pub enum SyncOperation {
 ### **7.1 Add module-level documentation**
 ```rust
 //! # Bitslides Core Library
-//! 
+//!
 //! This library implements automatic file synchronization between "volumes" using "slides".
-//! 
+//!
 //! ## Concepts
 //! - **Volume**: A storage location containing a slides directory
 //! - **Slide**: A destination folder within a volume's slides directory
@@ -229,7 +229,7 @@ The complex logic in `build_syncjobs()` needs better documentation.
 
 ## **8. Specific Issues**
 
-### **8.1 Fix the WIP file naming** 
+### **8.1 Fix the WIP file naming**
 Line 251 in fs.rs has FIXME: "If the file is photo.jpg the wip needs to be .photo.jpg.wip"
 ```rust
 let wip = if request.safe {
@@ -265,5 +265,3 @@ fn test_identify_volumes() -> Result<()> {
     Ok(())
 }
 ```
-
-

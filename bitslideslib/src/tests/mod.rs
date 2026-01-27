@@ -365,7 +365,7 @@ async fn test_file_monitoring_behavior() {
     tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
 
     // Check: Verify trace contains the file operations
-    let trace_content ={
+    let trace_content = {
         // Clean shutdown to flush tracer
         enough(token).await.unwrap();
 
@@ -374,11 +374,11 @@ async fn test_file_monitoring_behavior() {
         // Look for evidence of the directory and file operations in traces
         assert!(
             trace_content.contains("test_monitoring"),
-            "Trace should contain the new directory"
+            "Trace should contain the new directory. Trace content: {}", trace_content
         );
         assert!(
             trace_content.contains("new_test_file.txt"),
-            "Trace should contain the new file"
+            "Trace should contain the new file. Trace content: {}", trace_content
         );
 
         trace_content
@@ -411,5 +411,4 @@ async fn test_file_monitoring_behavior() {
         synced_content, b"Hello, monitoring test!",
         "Synchronized file content should match"
     );
-
 }

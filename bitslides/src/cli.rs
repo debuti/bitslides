@@ -20,7 +20,7 @@ fn default_config_files() -> Vec<PathBuf> {
 }
 
 /// Returns a `clap::Command` instance for the CLI.
-///  
+///
 pub fn cli() -> Command {
     Command::new(APP_NAME)
         .version(APP_VERS)

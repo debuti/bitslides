@@ -13,7 +13,7 @@ Watches your volumes (HDD, USB drive, network mounted storage, etc.) and synchro
 
 We all have multiple devices lying around: your personal computer, an external drive to save media, the smartphone, or even some cloud storage. Usually each device is dedicated to some specific tasks, the personal computer is used for photo editing, while the cloud storage is used to save your loved mp3s. Manually sending new contents to each device is a repetitive task that can be avoided using automation, and this is the gap `bitslides` solves, managing the transfer of information between devices.
 
-Let's review its features through an example. 
+Let's review its features through an example.
 
 ### Example Workflow with bitslides
 
@@ -30,7 +30,7 @@ This is where `bitslides` comes to the rescue. By configuring slides (mailboxes-
 
 *Donald* configures `bitslides` on his laptop, pendrive, and personal server. For example:
 
-On the laptop: 
+On the laptop:
  * A slide for DVD ISO files (`/media/Laptop/Slides/Server/Movies/`).
  * A slide for music files (`/media/Pendrive/Slides/Laptop/Music/`).
 On the server:
@@ -121,7 +121,7 @@ name: "myvolume"
 ### Slide config file
 
 ```
-# route: 
+# route:
 route: "myothervol"
 ```
 
