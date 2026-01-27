@@ -343,7 +343,9 @@ async fn execute_syncjobs(
 ) -> Result<(RecommendedWatcher, Vec<tokio::task::JoinHandle<Result<()>>>)> {
     let mut watcher_db = Vec::new();
     for syncjob in syncjobs.iter_mut() {
-        let path = volumes[&syncjob.src].slides[&syncjob.dst].path.clone();
+        let path = volumes[&syncjob.src].slides[&syncjob.dst]
+            .path
+            .canonicalize()?;
         let trigger = if let Some(trigger) = syncjob.take_trigger() {
             trigger
         } else {
@@ -366,15 +368,22 @@ async fn execute_syncjobs(
                             for (path, trigger) in &watcher_db {
                                 // Check if any event path is within the watched directory
                                 for event_path in &event.paths {
-                                    let _deleteme = tracer.sync_log("Event", "launching");
-                                    // FIXME: Maybe this doesnt work
-                                    if event_path.starts_with(path) {
-                                        if trigger.capacity() > 0 {
-                                            let _deleteme = tracer.sync_log("Event", "launched");
-                                            let _ = trigger.blocking_send(());
+                                    let event_path = event_path.canonicalize();
+                                    if let Ok(event_path) = event_path {
+                                        let _deleteme = tracer.sync_log(
+                                            "Event",
+                                            &format!("launching {}", event_path.display()),
+                                        );
+                                        // FIXME: Maybe this doesnt work
+                                        if event_path.starts_with(path) {
+                                            if trigger.capacity() > 0 {
+                                                let _deleteme =
+                                                    tracer.sync_log("Event", "launched");
+                                                let _ = trigger.blocking_send(());
+                                            }
+                                            // Otherwise skip this event, its ok
+                                            break;
                                         }
-                                        // Otherwise skip this event, its ok
-                                        break;
                                     }
                                 }
                             }
