@@ -32,6 +32,12 @@ struct SyncJobInner {
 }
 
 impl SyncJob {
+    /// Capacity of the internal synchronization trigger channel.
+    ///
+    /// 1 slot for the current event and 1 slot for a possible next event.
+    ///
+    const CHANNEL_CAPACITY: usize = 2;
+
     /// Creates a new [`SyncJob`] with the given source, proxy and destination volumes.
     ///
     /// # Parameters
@@ -44,8 +50,9 @@ impl SyncJob {
     ///
     /// A [`SyncJob`] instance initialized with the provided volumes and an
     /// internal trigger channel used to coordinate synchronization.
+    ///
     pub(crate) fn new(src: &str, via: &str, dst: &str) -> Self {
-        let (tx, rx) = mpsc::channel(1);
+        let (tx, rx) = mpsc::channel(Self::CHANNEL_CAPACITY);
         Self {
             src: src.to_string(),
             via: via.to_string(),
@@ -61,6 +68,7 @@ impl SyncJob {
     /// # Returns
     ///
     /// An `Option` containing the `Sender<()>` if it was available, or `None` if it has already been taken.
+    ///
     pub(crate) fn take_trigger(&mut self) -> Option<tokio::sync::mpsc::Sender<()>> {
         self.inner.tx.take()
     }
@@ -72,6 +80,7 @@ impl SyncJob {
     /// # Returns
     ///
     /// A mutable reference to the `Receiver<()>`.
+    ///
     pub(crate) fn borrow_receiver(&mut self) -> &mut tokio::sync::mpsc::Receiver<()> {
         &mut self.inner.rx
     }
@@ -91,6 +100,8 @@ impl Debug for SyncJob {
     }
 }
 
+/// Syncjob PartialEq implementation.
+///
 impl PartialEq for SyncJob {
     fn eq(&self, other: &Self) -> bool {
         self.src == other.src && self.via == other.via && self.dst == other.dst

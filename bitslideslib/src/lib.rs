@@ -366,9 +366,9 @@ async fn execute_syncjobs(
                             for (path, trigger) in &watcher_db {
                                 // Check if any event path is within the watched directory
                                 for event_path in &event.paths {
+                                    let _deleteme = tracer.sync_log("Event", "launching");
                                     // FIXME: Maybe this doesnt work
                                     if event_path.starts_with(path) {
-                                        let _deleteme = tracer.sync_log("Event", "launching");
                                         if trigger.capacity() > 0 {
                                             let _deleteme = tracer.sync_log("Event", "launched");
                                             let _ = trigger.blocking_send(());
