@@ -336,7 +336,7 @@ async fn test_file_monitoring_behavior() {
             trace: Some(trace_path.clone()),
             check: Some(Algorithm::MD5),
             collision: CollisionPolicy::Fail,
-            safe: false,
+            safe: true,
             retries: 5,
         };
         slide(config).await.unwrap()
@@ -370,13 +370,13 @@ async fn test_file_monitoring_behavior() {
         .join("slides")
         .join("foo")
         .join("test_monitoring");
-    let synced_file_path = synced_dir.join("new_test_file.txt");
     assert!(
         synced_dir.exists(),
         "Directory should be synchronized to the destination: {:?}",
         synced_dir
     );
 
+    let synced_file_path = synced_dir.join("new_test_file.txt");
     assert!(
         synced_file_path.exists(),
         "File should be synchronized to the destination: {:?}",

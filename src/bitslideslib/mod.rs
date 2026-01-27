@@ -26,6 +26,7 @@ const DEFAULT_SLIDE_CONFIG_FILE: &str = ".slide.yml";
 
 #[allow(dead_code)]
 pub struct Token {
+    /// Watcher OS task handle. Dropped first to force the syncjob tasks to end. 
     watcher: RecommendedWatcher,
     handles: Vec<tokio::task::JoinHandle<Result<()>>>,
     tracer: Option<tokio::task::JoinHandle<()>>,
@@ -45,26 +46,9 @@ impl Token {
     }
 }
 
-// impl Drop for Token {
-//     fn drop(&mut self) {
-//         // Drop the watched first,
-//         drop(self.watcher);
-
-//         // if let Some(watcher) = &watcher {
-//         //     tracer.send(None).await?;
-//         // }
-
-//         for handle in handles {
-//             handle.await??;
-//         }
-
-//         // if let Some(tracer) = &tracer {
-//         //     tracer.send(None).await?;
-//         // }
-//     }
-// }
-
 pub async fn enough(token: Token) -> Result<()> {
+    // TODO: Ideally this should be happening in the Drop impl for Token. But that wont let us control the results of the awaited tasks.
+
     let watcher = token.watcher;
     let handles = token.handles;
     let tracer = token.tracer;
@@ -87,10 +71,10 @@ pub async fn enough(token: Token) -> Result<()> {
     Ok(())
 }
 
-/// Execute all the slides.
+/// Monitor all the slides.
 ///
 /// This function will take the input `config`, identify the volumes and slides,
-/// and execute the sync jobs. Returns a Result indicating success or failure. TODO
+/// and execute the sync jobs. Returns a Result indicating success or failure.
 ///
 pub async fn slide(config: GlobalConfig) -> Result<Token> {
     log::debug!("Config: {config:#?}");
@@ -402,7 +386,7 @@ async fn execute_syncjobs(
 
             watcher.watch(&src, RecursiveMode::Recursive)?;
 
-            // Spawn a new tokio async task
+            // Spawn a new tokio async task for this syncjob
             let handle = tokio::spawn(async move {
                 loop {
                     if let Err(e) =
@@ -453,8 +437,6 @@ async fn sync_slide(
             let dst = dst.join(entry.file_name());
             fs::sync(&entry_path, &dst, dry_run, tracer, move_req).await?;
         }
-
-        // TODO: Instead of directly synching, create a watcher
     }
 
     Ok(())
