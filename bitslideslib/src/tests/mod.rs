@@ -390,11 +390,11 @@ async fn test_file_monitoring_behavior() {
         .join("slides")
         .join("foo")
         .join("test_monitoring");
-    // assert!(
-    //     synced_dir.exists(),
-    //     "Directory should be synchronized to the destination: {:?}",
-    //     synced_dir
-    // );
+    assert!(
+        synced_dir.exists(),
+        "Directory should be synchronized to the destination: {:?}",
+        synced_dir
+    );
 
     // Check: Verify the file was synchronized to the volume
     let synced_file_path = synced_dir.join("new_test_file.txt");

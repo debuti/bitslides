@@ -343,14 +343,16 @@ async fn execute_syncjobs(
 ) -> Result<(RecommendedWatcher, Vec<tokio::task::JoinHandle<Result<()>>>)> {
     tracer.log("Init", "Starting slides sync...").await?;
 
-    let watcher_db = syncjobs
-        .iter_mut()
-        .map(|syncjob| {
-            let path = volumes[&syncjob.src].slides[&syncjob.dst].path.clone();
-            let trigger = syncjob.take_trigger().expect("No trigger found");
-            (path, trigger)
-        })
-        .collect::<Vec<_>>();
+    let mut watcher_db = Vec::new();
+    for syncjob in syncjobs.iter_mut() {
+        let path = volumes[&syncjob.src].slides[&syncjob.dst].path.clone();
+        let trigger = if let Some(trigger) = syncjob.take_trigger() {
+            trigger
+        } else {
+            bail!("No trigger found for sync job {:?}", syncjob);
+        };
+        watcher_db.push((path, trigger));
+    }
 
     let mut watcher = notify::recommended_watcher(
         move |res: std::result::Result<notify::Event, notify::Error>| {
@@ -361,7 +363,10 @@ async fn execute_syncjobs(
                             // Check if any event path is within the watched directory
                             for event_path in &event.paths {
                                 if event_path.starts_with(path) {
-                                    let _ = trigger.blocking_send(());
+                                    if trigger.capacity() > 0 {
+                                        let _ = trigger.blocking_send(());
+                                    }
+                                    // Otherwise skip this event, its ok
                                     break;
                                 }
                             }
@@ -395,7 +400,7 @@ async fn execute_syncjobs(
                         bail!("Error syncing {:?} -> {:?}: {:?}", src, dst, e);
                     }
                     // None is received when the mpsc::Sender is dropped
-                    if syncjob.inner.rx.recv().await.is_none() {
+                    if syncjob.borrow_receiver().recv().await.is_none() {
                         return Ok(());
                     }
                 }
