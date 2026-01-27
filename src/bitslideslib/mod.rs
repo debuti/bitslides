@@ -374,8 +374,12 @@ async fn execute_syncjobs(
                 match event.kind {
                     EventKind::Modify(_) | EventKind::Create(_) | EventKind::Remove(_) => {
                         for (path, trigger) in &watcher_db {
-                            if event.paths.contains(path) {
-                                let _ = trigger.blocking_send(());
+                            // Check if any event path is within the watched directory
+                            for event_path in &event.paths {
+                                if event_path.starts_with(path) {
+                                    let _ = trigger.blocking_send(());
+                                    break;
+                                }
                             }
                         }
                     }

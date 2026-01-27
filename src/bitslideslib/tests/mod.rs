@@ -3,6 +3,7 @@ mod common;
 use crate::CollisionPolicy;
 
 use super::*;
+use super::config::{GlobalConfig, RootsetConfig};
 use checksums::{hash_file, Algorithm};
 use pretty_assertions::assert_eq;
 
@@ -310,4 +311,100 @@ async fn test_execute_syncjobs_with_missing_source() {
     );
 
     handle.unwrap().await.unwrap();
+}
+
+/// Test the real-time file monitoring behavior
+/// 
+/// This test verifies that the file watcher correctly detects changes in subdirectories
+/// and triggers synchronization between volumes.
+#[tokio::test]
+async fn test_file_monitoring_behavior() {
+    // Prerequisite: Setup the test context
+    let ctx = setup().unwrap();
+
+    // Prerequisite: Create a tracer that writes to a known location
+    let trace_path = ctx.temp_dir.path().join("monitoring.trace");
+
+    // Action: Start the monitoring with slide()
+    let token = {
+        let config = GlobalConfig {
+            rootsets: vec![RootsetConfig {
+                keyword: "slides".to_string(),
+                roots: ctx.roots.clone(),
+            }],
+            dry_run: false,
+            trace: Some(trace_path.clone()),
+            check: Some(Algorithm::MD5),
+            collision: CollisionPolicy::Fail,
+            safe: false,
+            retries: 5,
+        };
+        slide(config).await.unwrap()
+    };
+
+    // Wait for initial sync to complete
+    tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+
+    // Action: Create a new file in a subdirectory of one of the SOURCE slides to trigger monitoring
+    // Note: The sync direction is bar -> foo, so we need to create the file in bar/slides/foo
+    // which will then be synced to foo/slides/foo
+    let test_dir = ctx.roots[0]
+        .join("bar")
+        .join("slides")
+        .join("foo")
+        .join("test_monitoring");
+    std::fs::create_dir(&test_dir).unwrap();
+    
+    // Give the watcher time to detect the directory creation
+    tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+    
+    let new_file_path = test_dir.join("new_test_file.txt");
+    std::fs::write(&new_file_path, b"Hello, monitoring test!").unwrap();
+
+    // Wait for the file change to be detected and synced
+    tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+
+    // Check: Verify the directory and file were synchronized to the DESTINATION volume
+    let synced_dir = ctx.roots[0]
+        .join("foo")
+        .join("slides")
+        .join("foo")
+        .join("test_monitoring");
+    let synced_file_path = synced_dir.join("new_test_file.txt");
+    assert!(
+        synced_dir.exists(),
+        "Directory should be synchronized to the destination: {:?}",
+        synced_dir
+    );
+
+    assert!(
+        synced_file_path.exists(),
+        "File should be synchronized to the destination: {:?}",
+        synced_file_path
+    );
+
+    let synced_content = std::fs::read(&synced_file_path).unwrap();
+    assert_eq!(
+        synced_content,
+        b"Hello, monitoring test!",
+        "Synchronized file content should match"
+    );
+
+    // Check: Verify trace contains the file operations
+    {
+        // Clean shutdown to flush tracer
+        enough(token).await.unwrap();
+
+        let trace_content = std::fs::read_to_string(&trace_path).unwrap();
+
+        // Look for evidence of the directory and file operations in traces
+        assert!(
+            trace_content.contains("test_monitoring"),
+            "Trace should contain the new directory"
+        );
+        assert!(
+            trace_content.contains("new_test_file.txt"),
+            "Trace should contain the new file"
+        );
+    }
 }
