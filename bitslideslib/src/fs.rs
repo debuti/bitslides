@@ -1,7 +1,7 @@
 use anyhow::{bail, Result};
 use std::path::{Path, PathBuf};
 
-use crate::bitslideslib::tracer::Tracer;
+use crate::tracer::Tracer;
 
 use super::{
     config::{Algorithm, CollisionPolicy},

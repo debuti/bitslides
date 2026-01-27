@@ -6,7 +6,7 @@ use std::io::Write;
 use std::path::Path;
 use std::path::PathBuf;
 
-use crate::bitslideslib::volume::DEFAULT_VOLUME_CONFIG_FILE;
+use crate::volume::DEFAULT_VOLUME_CONFIG_FILE;
 
 use super::DEFAULT_SLIDE_CONFIG_FILE;
 

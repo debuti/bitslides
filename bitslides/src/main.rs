@@ -1,5 +1,5 @@
 use anyhow::{bail, Result};
-use bitslides::{enough, slide, Algorithm, CollisionPolicy, GlobalConfig, RootsetConfig};
+use bitslideslib::{enough, slide, Algorithm, CollisionPolicy, GlobalConfig, RootsetConfig};
 use chrono::prelude::*;
 use config::DEFAULT_KEYWORD;
 use std::path::PathBuf;

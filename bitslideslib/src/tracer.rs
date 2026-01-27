@@ -9,7 +9,7 @@ use tokio::{
     task::JoinHandle,
 };
 
-use crate::bitslideslib::syncjob::SyncJob;
+use crate::syncjob::SyncJob;
 
 /// Tracer abstraction
 ///

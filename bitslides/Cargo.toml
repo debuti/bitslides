@@ -1,0 +1,38 @@
+[package]
+name = "bitslides"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+description = "Synchronize volumes on the background"
+readme = "../README.md"
+
+[[bin]]
+name = "bitslides"
+path = "src/main.rs"
+
+[dependencies]
+bitslideslib = { path = "../bitslideslib" }
+anyhow.workspace = true
+chrono.workspace = true
+log.workspace = true
+serde.workspace = true
+serde_yaml.workspace = true
+simplelog.workspace = true
+tokio.workspace = true
+
+# MIT OR Apache-2.0
+clap = { version = "4.5", features = ["string"] }
+ctrlc = "3.5"
+dirs = "4.0"
+
+[dev-dependencies]
+# MIT OR Apache-2.0
+tempfile = "3.14.0"
+
+[package.metadata.wix]
+upgrade-guid = "D4554AC8-4594-4ACC-B132-DDFA5FADEBB1"
+path-guid = "4064CD9A-B945-46A5-BA8F-EC297B42726D"
+license = false
+eula = false

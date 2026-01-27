@@ -1,4 +1,4 @@
-use crate::bitslideslib::config;
+use crate::config;
 
 use super::slide::Slide;
 use anyhow::Result;

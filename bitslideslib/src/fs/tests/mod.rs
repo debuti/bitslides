@@ -1,4 +1,4 @@
-use crate::bitslideslib::tracer;
+use crate::tracer;
 
 use super::*;
 

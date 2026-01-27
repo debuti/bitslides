@@ -1,5 +1,4 @@
 use anyhow::{bail, Result};
-use config::GlobalConfig;
 use fs::MoveStrategy;
 use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use slide::Slide;
@@ -13,7 +12,7 @@ use volume::Volume;
 #[cfg(target_os = "windows")]
 use std::ffi::CStr;
 
-use crate::bitslideslib::tracer::Tracer;
+use tracer::Tracer;
 
 pub mod config;
 mod fs;
@@ -21,6 +20,8 @@ mod slide;
 mod syncjob;
 mod tracer;
 mod volume;
+
+pub use config::{Algorithm, CollisionPolicy, GlobalConfig, RootsetConfig};
 
 const DEFAULT_SLIDE_CONFIG_FILE: &str = ".slide.yml";
 
