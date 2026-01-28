@@ -174,7 +174,9 @@ dist init
 #   [ ] homebrew
 #   [x] msi
 
-# Fix the generated CI script
+# Fix the generated CI script manually
+#  * Undo changes on the `checks` job
+#  * Undo changes on the needs of `plan` job
 
 # Make sure the plan is functional, otherwise fix it
 dist plan
