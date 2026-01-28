@@ -182,8 +182,4 @@ dist init
 # * Only works on main
 git tag v0.1.0
 git push --tags
-
-# publish to crates.io
-cargo publish
-
 ```

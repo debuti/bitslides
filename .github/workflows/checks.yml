@@ -23,11 +23,6 @@ jobs:
       - name: Setup Python3
         uses: actions/setup-python@v3
 
-      - name: Install Clippy and Rustfmt
-        run: |
-          rustup component add clippy
-          rustup component add rustfmt
-
       - name: Run pre-commit checks
         uses: pre-commit/action@v3.0.1
 
