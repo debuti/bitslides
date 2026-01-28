@@ -8,7 +8,7 @@
 4. Make collision/check policies configurable
 
 ### High Priority:
-5. Create a workspace where you have 1 lib and 1 bin
+5. ✅ Create a workspace where you have 1 lib and 1 bin
 5. ✅ Extract Tracer into its own module
 6. Fix WIP file naming
 7. Add timeouts to file operations

@@ -136,3 +136,54 @@ route: "myothervol"
 ## Contributions Welcome
 
 `bitslides` is an open-source project! If you’d like to contribute, head over to the [GitHub repository](https://github.com/debuti/bitslides). Whether it’s fixing bugs, suggesting features, or improving documentation, your help is appreciated.
+
+### Development environment
+
+Installing pre-commit is recommended for saving CI time on the checks job
+
+```bash
+python3 -m pip install pre-commit
+pre-commit install
+```
+
+### Release process
+
+This project uses [cargo-dist](https://axodotdev.github.io/cargo-dist/book/) to publish releases.
+
+```bash
+# This will update your cargo-dist to the latest available version
+cargo install cargo-dist --locked
+
+# This will update the CI script that will run on
+# * pull requests, where no release will happen
+# * tags, that will create an actual release
+dist init
+#  Yes to update
+#  Select the following platforms
+#   [x] Apple Silicon macOS (aarch64-apple-darwin)
+#   [x] ARM64 Linux (aarch64-unknown-linux-gnu)
+#   [ ] ARM64 Windows (aarch64-pc-windows-msvc)
+#   [x] Intel macOS (x86_64-apple-darwin)
+#   [x] x64 Linux (x86_64-unknown-linux-gnu)
+#   [x] x64 MUSL Linux (x86_64-unknown-linux-musl)
+#   [x] x64 Windows (x86_64-pc-windows-msvc)
+#  Select the following installers
+#   [x] shell
+#   [x] powershell
+#   [ ] npm
+#   [ ] homebrew
+#   [x] msi
+
+# Fix the generated CI script
+
+
+# Actually push the tag up (this triggers dist's CI)
+# * Make sure the version number matches the one configured in Cargo.toml
+# * Only works on main
+git tag v0.1.0
+git push --tags
+
+# publish to crates.io
+cargo publish
+
+```
