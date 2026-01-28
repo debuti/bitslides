@@ -107,7 +107,6 @@ fn test_identify_env() {
 }
 
 /// Test the building of sync jobs between volumes
-#[rustfmt::skip]
 #[test]
 fn test_build_syncjobs() {
     // Prerequisite: Setup the test context
@@ -119,11 +118,15 @@ fn test_build_syncjobs() {
     // Action: Call build_syncjobs operation with the identified volumes
     let syncjobs = build_syncjobs(&mut volumes).unwrap();
 
-    println!("Syncjobs:");
-    for syncjob in &syncjobs {
-        println!("  {:?}", syncjob);
+    #[cfg(false)]
+    {
+        println!("Syncjobs:");
+        for syncjob in &syncjobs {
+            println!("  {:?}", syncjob);
+        }
     }
 
+    #[rustfmt::skip]
     let expected_syncjobs =[
         SyncJob::new("foo", "bar", "bar"),
         SyncJob::new("foo", "baz", "baz"),
@@ -141,12 +144,15 @@ fn test_build_syncjobs() {
     // Check: The result should match the length and content of the expected sync jobs
     assert_eq!(syncjobs.len(), expected_syncjobs.len());
     for expected_syncjob in expected_syncjobs {
-        assert!(syncjobs.contains(&expected_syncjob), "Missing {:?}", expected_syncjob);
+        assert!(
+            syncjobs.contains(&expected_syncjob),
+            "Missing {:?}",
+            expected_syncjob
+        );
     }
 
     // Check: The sync jobs don't contain disabled volumes
     assert!(!syncjobs.contains(&SyncJob::new("disabled", "foo", "foo")));
-
 }
 
 /// Test the execution of sync jobs between volumes
