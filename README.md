@@ -176,6 +176,11 @@ dist init
 
 # Fix the generated CI script
 
+# Make sure the plan is functional, otherwise fix it
+dist plan
+
+# Commit and push your changes. Merge the pull request.
+...
 
 # Actually push the tag up (this triggers dist's CI)
 # * Make sure the version number matches the one configured in Cargo.toml
