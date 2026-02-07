@@ -1,11 +1,9 @@
 use anyhow::{bail, Result};
 use std::path::{Path, PathBuf};
-use tokio::sync::mpsc::Sender;
 
-use super::{
-    config::{Algorithm, CollisionPolicy},
-    syncjob::SyncJob,
-};
+use crate::tracer::Tracer;
+
+use super::config::{Algorithm, CollisionPolicy};
 
 /// Move request parameters.
 ///
@@ -118,13 +116,13 @@ pub async fn sync<U: AsRef<Path>, V: AsRef<Path>>(
     from: U,
     to: V,
     dry_run: bool,
-    tracer: &Option<(Sender<Option<String>>, &SyncJob)>,
+    tracer: &Tracer,
     request: &MoveStrategy,
 ) -> Result<()> {
     let from = PathBuf::from(from.as_ref());
     let to = PathBuf::from(to.as_ref());
 
-    dbg!(&from, &to);
+    // dbg!(&from, &to);
 
     let input_root_length = from.components().count();
     let output_root = to;
@@ -151,12 +149,7 @@ pub async fn sync<U: AsRef<Path>, V: AsRef<Path>>(
         // Check if the destination exists, otherwise create it
         if std::fs::metadata(&dst).is_err() {
             log::info!("Mkdir: {:?}", dst);
-
-            if let Some((tracer, syncjob)) = &tracer {
-                tracer
-                    .send(Some(format!("[{:?}] MKDIR {:?}", syncjob, dst,)))
-                    .await?;
-            }
+            tracer.async_log("MKDIR", &format!("{:?}", &dst)).await?;
 
             if !dry_run {
                 std::fs::create_dir_all(&dst)?;
@@ -178,11 +171,10 @@ pub async fn sync<U: AsRef<Path>, V: AsRef<Path>>(
             match src.file_name() {
                 Some(filename) => {
                     log::info!("Move: {:?} -> {:?}", &src, &dst);
-                    if let Some((tracer, syncjob)) = &tracer {
-                        tracer
-                            .send(Some(format!("[{:?}] MV {:?} -> {:?}", syncjob, src, dst,)))
-                            .await?;
-                    }
+                    tracer
+                        .async_log("MV", &format!("{:?} -> {:?}", &src, &dst))
+                        .await?;
+
                     let dst = dst.join(filename);
                     if !dry_run {
                         move_file(&src, &dst, request, checksums::hash_file).await?;
@@ -238,8 +230,8 @@ where
             }
         }
 
-        if dst_.is_some() {
-            dst_file = dst_.as_ref().unwrap();
+        if let Some(ref new_dst) = dst_ {
+            dst_file = new_dst;
         }
     }
 

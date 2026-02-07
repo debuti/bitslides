@@ -1,4 +1,4 @@
-use crate::bitslideslib::config;
+use crate::config;
 
 use super::slide::Slide;
 use anyhow::Result;
@@ -7,6 +7,8 @@ use std::{collections::HashMap, path::PathBuf};
 pub const DEFAULT_VOLUME_CONFIG_FILE: &str = ".volume.yml";
 
 /// Volume representation.
+///
+/// A volume is a storage unit that contains a slides folder (or the chosen keyword).
 ///
 #[derive(Debug)]
 pub struct Volume {
@@ -28,7 +30,7 @@ impl Volume {
     pub fn new(name: String, disabled: bool, keyword: &str, path: PathBuf) -> Self {
         Self {
             name,
-            disabled: disabled,
+            disabled,
             keyword: keyword.to_owned(),
             path,
             slides: HashMap::new(),
@@ -113,7 +115,7 @@ impl Volume {
     }
 }
 
-#[cfg(any())]
+#[cfg(false)]
 impl std::fmt::Display for Volume {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.name)?;

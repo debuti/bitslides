@@ -1,5 +1,5 @@
 use anyhow::{bail, Result};
-use bitslides::{slide, Algorithm, CollisionPolicy, GlobalConfig, RootsetConfig};
+use bitslideslib::{enough, slide, Algorithm, CollisionPolicy, GlobalConfig, RootsetConfig};
 use chrono::prelude::*;
 use config::DEFAULT_KEYWORD;
 use std::path::PathBuf;
@@ -69,6 +69,7 @@ fn process_all_configs(
 
                     rootsets.push(RootsetConfig { keyword, roots });
 
+                    // Yeah, only the trace of the last config file that defines it will prevail
                     if let Some(trace_fmt) = config.trace {
                         trace = generate_trace_path(&trace_fmt);
                     }
@@ -97,7 +98,10 @@ fn process_all_configs(
 ///
 /// This function gathers information and calls the bitslideslib fn.
 ///
-async fn main_w_args(args: &[String]) -> Result<()> {
+async fn main_w_args(
+    args: &[String],
+    shutdown_signal: tokio::sync::oneshot::Receiver<()>,
+) -> Result<()> {
     let matches = cli::cli().get_matches_from(args);
 
     // Get the configuration files
@@ -109,7 +113,7 @@ async fn main_w_args(args: &[String]) -> Result<()> {
     let non_safe = matches.get_flag("non-safe");
     let retries = matches.get_one::<u8>("retries").unwrap();
 
-    // Initialize the logging framework
+    // Initialize the logging framework if not already done
     #[cfg(not(test))]
     {
         let verbose = *matches.get_one::<u8>("verbose").unwrap_or(&0);
@@ -135,7 +139,7 @@ async fn main_w_args(args: &[String]) -> Result<()> {
 
     let (rootsets, trace) = process_all_configs(config_files.into_iter().collect())?;
 
-    slide(GlobalConfig {
+    let keep_alive = slide(GlobalConfig {
         rootsets,
         dry_run,
         trace,
@@ -146,115 +150,38 @@ async fn main_w_args(args: &[String]) -> Result<()> {
         safe: !non_safe,
         retries: *retries,
     })
-    .await
+    .await?;
+
+    // Wait for shutdown signal (either from Ctrl+C handler or test)
+    shutdown_signal.await?;
+
+    enough(keep_alive).await
 }
 
 /// Entry point of the application.
 ///
 #[tokio::main]
 async fn main() -> Result<()> {
+    // Collect args
     let args = std::env::args().collect::<Vec<_>>();
-    main_w_args(&args).await
+
+    // Create a oneshot channel for shutdown signal
+    let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
+
+    // Install custom Ctrl+C handler (cross-platform, not using tokio's signal)
+    // Wrap the sender in an Option so we can take it in the FnMut closure
+    let shutdown_tx = std::sync::Mutex::new(Some(shutdown_tx));
+    ctrlc::set_handler(move || {
+        log::info!("Received Ctrl+C, shutting down...");
+        if let Some(tx) = shutdown_tx.lock().unwrap().take() {
+            let _ = tx.send(());
+        }
+    })
+    .expect("Failed to set Ctrl+C handler");
+
+    // Await on main with shutdown signal
+    main_w_args(&args, shutdown_rx).await
 }
 
 #[cfg(test)]
-mod tests {
-    use tempfile::tempdir;
-
-    use crate::main_w_args;
-
-    #[tokio::test]
-    async fn test_main_dummy_environment() {
-        let temp_dir = tempdir().unwrap();
-        // Use forward slashes in Windows
-        let temp_dir_str = temp_dir.path().to_str().unwrap().replace("\\", "/");
-        let config_file = temp_dir.path().join("config.yml");
-        let config_content = format!(
-            r#"
-# Example configuration file
-keyword: "slides"
-roots:
-- "root0"
-- "root1"
-trace: "{}/bitslides.%Y%M%d%H%M%S.log"
-"#,
-            temp_dir_str
-        );
-        std::fs::write(&config_file, config_content).unwrap();
-
-        let args = vec!["bitslides", "-c", config_file.to_str().unwrap()];
-
-        assert!(main_w_args(
-            args.into_iter()
-                .map(|x| x.to_owned())
-                .collect::<Vec<String>>()
-                .as_slice(),
-        )
-        .await
-        .is_ok());
-    }
-
-    #[tokio::test]
-    async fn test_main_corrupted_config() {
-        let temp_dir = tempdir().unwrap();
-        let config_file = temp_dir.path().join("config.yml");
-        let config_content = r#"Memento mori"#;
-        std::fs::write(&config_file, config_content).unwrap();
-
-        let args = vec!["bitslides", "-c", config_file.to_str().unwrap()];
-
-        assert!(main_w_args(
-            args.into_iter()
-                .map(|x| x.to_owned())
-                .collect::<Vec<String>>()
-                .as_slice(),
-        )
-        .await
-        .is_err());
-    }
-
-    #[tokio::test]
-    async fn test_main_missing_config() {
-        let args = vec!["bitslides", "-c", "not-to-be-found"];
-
-        assert!(main_w_args(
-            args.into_iter()
-                .map(|x| x.to_owned())
-                .collect::<Vec<String>>()
-                .as_slice(),
-        )
-        .await
-        .is_err());
-    }
-
-    #[tokio::test]
-    async fn test_main_wrong_trace_config() {
-        let temp_dir = tempdir().unwrap();
-        let temp_dir_str = temp_dir.path().to_str().unwrap().replace("\\", "/");
-        let config_file = temp_dir.path().join("config.yml");
-        let config_content = format!(
-            r#"
-# Example configuration file
-keyword: "slides"
-roots:
-- "root0"
-- "root1"
-trace: "{}/non-existing-folder/bitslides.log"
-"#,
-            temp_dir_str
-        );
-        std::fs::write(&config_file, config_content).unwrap();
-
-        let args = vec!["bitslides", "-c", config_file.to_str().unwrap()];
-
-        let result = main_w_args(
-            args.into_iter()
-                .map(|x| x.to_owned())
-                .collect::<Vec<String>>()
-                .as_slice(),
-        )
-        .await;
-
-        assert!(result.is_ok(), "Failed with: {}", result.unwrap_err());
-    }
-}
+mod tests;

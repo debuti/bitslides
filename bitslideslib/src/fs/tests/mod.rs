@@ -1,3 +1,5 @@
+use crate::tracer;
+
 use super::*;
 
 use std::fs::{self, File};
@@ -148,6 +150,15 @@ async fn test_sync_directory() {
     let src_dir = temp_dir.path().join("src");
     let dest_dir = temp_dir.path().join("dest");
 
+    let (tracer, handle) = {
+        let trace_path = temp_dir.path().join("test.trace");
+        let (tracer, handle) = tracer::Tracer::new(&Some(&trace_path)).await.unwrap();
+        (
+            tracer.annotate_author("test_sync_directory".to_owned()),
+            handle.expect("Should have a handle"),
+        )
+    };
+
     let requests = [
         MoveStrategy {
             collision: CollisionPolicy::Fail,
@@ -185,10 +196,9 @@ async fn test_sync_directory() {
         writeln!(src_file, "Hello, world!").unwrap();
 
         // Perform copy
-        sync(&src_dir, &dest_dir, false, &None, request)
+        sync(&src_dir, &dest_dir, false, &tracer, request)
             .await
             .unwrap();
-        println!("---");
 
         // Verify destination directory structure
         let dest_file_path = dest_dir.join("test.txt");
@@ -198,6 +208,14 @@ async fn test_sync_directory() {
 
         // Clean up
         fs::remove_dir_all(&temp_dir).unwrap();
+    }
+
+    // Clean up tracer
+    {
+        // Drop the tx channel to allow the tracer to finish
+        drop(tracer);
+        // Wait for the tracer task to finish
+        handle.await.unwrap();
     }
 }
 
@@ -211,6 +229,15 @@ async fn test_sync_empty_directory() {
     let src_dir = temp_dir.path().join("src");
     let dest_dir = temp_dir.path().join("dest");
 
+    let (tracer, handle) = {
+        let trace_path = temp_dir.path().join("test.trace");
+        let (tracer, handle) = tracer::Tracer::new(&Some(&trace_path)).await.unwrap();
+        (
+            tracer.annotate_author("test_sync_empty_directory".to_owned()),
+            handle.expect("Should have a handle"),
+        )
+    };
+
     // Prerequisite: Create empty source directory
     fs::create_dir(&src_dir).unwrap();
 
@@ -222,7 +249,7 @@ async fn test_sync_empty_directory() {
         &src_dir,
         &dest_dir,
         false,
-        &None,
+        &tracer,
         &MoveStrategy {
             collision: CollisionPolicy::Fail,
             safe: false,
@@ -241,6 +268,14 @@ async fn test_sync_empty_directory() {
         let entries = fs::read_dir(&dest_dir).unwrap();
         assert_eq!(entries.count(), 0);
     }
+
+    // Clean up tracer
+    {
+        // Drop the tx channel to allow the tracer to finish
+        drop(tracer);
+        // Wait for the tracer task to finish
+        handle.await.unwrap();
+    }
 }
 
 /// Test that a file belonging to a nested directory is copied from the source to the destination directory.
@@ -256,6 +291,15 @@ async fn test_sync_nested_directories() {
     let nested_dir = src_dir.join("nested");
     let dest_dir = temp_dir.path().join("dest");
 
+    let (tracer, handle) = {
+        let trace_path = temp_dir.path().join("test.trace");
+        let (tracer, handle) = tracer::Tracer::new(&Some(&trace_path)).await.unwrap();
+        (
+            tracer.annotate_author("test_sync_nested_directories".to_owned()),
+            handle.expect("Should have a handle"),
+        )
+    };
+
     // Prerequisite: Create nested directory structure
     fs::create_dir_all(&nested_dir).unwrap();
     let src_file_path = nested_dir.join("test.txt");
@@ -267,7 +311,7 @@ async fn test_sync_nested_directories() {
         &src_dir,
         &dest_dir,
         false,
-        &None,
+        &tracer,
         &MoveStrategy {
             collision: CollisionPolicy::Fail,
             safe: false,
@@ -296,6 +340,14 @@ async fn test_sync_nested_directories() {
     // Check: Verify source directory structure is unchanged
     assert!(!src_file_path.exists());
     assert!(!nested_dir.exists());
+
+    // Clean up tracer
+    {
+        // Drop the tx channel to allow the tracer to finish
+        drop(tracer);
+        // Wait for the tracer task to finish
+        handle.await.unwrap();
+    }
 }
 
 /// Setup the environment for testing all move_file permutations.
