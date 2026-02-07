@@ -1,0 +1,36 @@
+name: crates.io publishing
+
+on:
+  push:
+    tags:
+      - '**[0-9]+.[0-9]+.[0-9]+*'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    env:
+      TAG: ${{ github.ref_name }}
+    permissions:
+      contents: write
+      id-token: write # Required for Trusted Publishing OIDC
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Common setup
+        uses: ./.github/actions/common
+        with:
+          toolchain: stable
+
+      - name: Check that Cargo.toml version matches tag
+        run: |
+          CARGO_VERSION=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')
+          if [ "$CARGO_VERSION" != "${TAG#v}" ]; then
+            echo "Error: Cargo.toml version ($CARGO_VERSION) does not match tag (${TAG#v})"
+            exit 1
+          fi
+          echo "Version check passed: $CARGO_VERSION"
+
+      - name: Publish on crates.io
+        run: cargo publish --provenance

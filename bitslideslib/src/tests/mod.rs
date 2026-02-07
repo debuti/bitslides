@@ -2,6 +2,7 @@ mod common;
 
 use crate::CollisionPolicy;
 
+use super::config::{GlobalConfig, RootsetConfig};
 use super::*;
 use checksums::{hash_file, Algorithm};
 use pretty_assertions::assert_eq;
@@ -88,11 +89,11 @@ fn test_identify_env() {
         assert_eq!(volumes[volume].slides.len(), 5);
 
         // Check: The volume should contain the following slides
-        for slide in ["foo", "bar", "baz", "qux", "quux"] {
+        for slide in ["foo", "bar", "baz", "qux_", "quux_"] {
             assert!(volumes[volume].slides.contains_key(slide));
         }
     }
-    assert!(volumes["baz"].slides["qux"].or_else.is_some());
+    assert!(volumes["baz"].slides["qux_"].or_else.is_some());
     assert!(volumes["baz"].slides["foo"].or_else.is_some());
 
     // Check: The result should contain the volume "disabled" (per volume config name override)
@@ -106,7 +107,6 @@ fn test_identify_env() {
 }
 
 /// Test the building of sync jobs between volumes
-#[rustfmt::skip]
 #[test]
 fn test_build_syncjobs() {
     // Prerequisite: Setup the test context
@@ -118,28 +118,41 @@ fn test_build_syncjobs() {
     // Action: Call build_syncjobs operation with the identified volumes
     let syncjobs = build_syncjobs(&mut volumes).unwrap();
 
+    #[cfg(false)]
+    {
+        println!("Syncjobs:");
+        for syncjob in &syncjobs {
+            println!("  {:?}", syncjob);
+        }
+    }
+
+    #[rustfmt::skip]
     let expected_syncjobs =[
-        SyncJob {src: "foo".to_owned(), dst: "bar".to_owned(), issue: "bar".to_owned(), },
-        SyncJob {src: "foo".to_owned(), dst: "baz".to_owned(), issue: "baz".to_owned(), },
-        SyncJob {src: "bar".to_owned(), dst: "foo".to_owned(), issue: "foo".to_owned(), },
-        SyncJob {src: "bar".to_owned(), dst: "baz".to_owned(), issue: "baz".to_owned(), },
-        SyncJob {src: "baz".to_owned(), dst: "foo".to_owned(), issue: "foo".to_owned(), },
-        SyncJob {src: "baz".to_owned(), dst: "bar".to_owned(), issue: "bar".to_owned(), },
-        SyncJob {src: "els".to_owned(), dst: "foo".to_owned(), issue: "foo".to_owned(), },
-        SyncJob {src: "els".to_owned(), dst: "bar".to_owned(), issue: "bar".to_owned(), },
-        SyncJob {src: "els".to_owned(), dst: "baz".to_owned(), issue: "baz".to_owned(), },
+        SyncJob::new("foo", "bar", "bar"),
+        SyncJob::new("foo", "baz", "baz"),
+        SyncJob::new("bar", "foo", "foo"),
+        SyncJob::new("bar", "baz", "baz"),
+        SyncJob::new("baz", "foo", "foo"),
+        SyncJob::new("baz", "bar", "bar"),
+        SyncJob::new("els", "foo", "foo"),
+        SyncJob::new("els", "bar", "bar"),
+        SyncJob::new("els", "baz", "baz"),
         // Indirect syncjobs
-        SyncJob {src: "baz".to_owned(), dst: "bar".to_owned(), issue: "qux".to_owned(), },
+        SyncJob::new("baz", "bar", "qux_"),
     ];
 
     // Check: The result should match the length and content of the expected sync jobs
     assert_eq!(syncjobs.len(), expected_syncjobs.len());
     for expected_syncjob in expected_syncjobs {
-        assert!(syncjobs.contains(&expected_syncjob), "Missing {:?}", expected_syncjob);
+        assert!(
+            syncjobs.contains(&expected_syncjob),
+            "Missing {:?}",
+            expected_syncjob
+        );
     }
 
     // Check: The sync jobs don't contain disabled volumes
-    assert!(!syncjobs.contains(&SyncJob {src: "disabled".to_owned(), dst: "foo".to_owned(), issue: "foo".to_owned(), }));
+    assert!(!syncjobs.contains(&SyncJob::new("disabled", "foo", "foo")));
 }
 
 /// Test the execution of sync jobs between volumes
@@ -148,13 +161,21 @@ async fn test_execute_syncjobs() {
     // Prerequisite: Setup the test context
     let ctx = setup().unwrap();
 
+    // Prerequisite: Create a tracer that writes to a known location
+    let trace_path = ctx.temp_dir.path().join("test.trace");
+    let (tracer, handle) = {
+        let (tracer, handle) = tracer::Tracer::new(&Some(&trace_path)).await.unwrap();
+        (
+            tracer.annotate_author("test_execute_syncjobs".to_owned()),
+            handle.expect("Should have a handle"),
+        )
+    };
+
     // Prerequisite: Identify the volumes in the root folders
     let mut volumes: HashMap<String, Volume> = identify_env("slides", &ctx.roots).unwrap();
 
     // Prerequisite: Build the sync jobs between the volumes
     let syncjobs = build_syncjobs(&mut volumes).unwrap();
-
-    let (tx, mut rx) = tokio::sync::mpsc::channel(32);
 
     // Action: Execute the sync jobs
     {
@@ -164,28 +185,40 @@ async fn test_execute_syncjobs() {
             check: None,
             retries: 5,
         };
-        execute_syncjobs(&volumes, &syncjobs, false, Some(tx), &move_req)
+        execute_syncjobs(&volumes, syncjobs, false, tracer, &move_req)
             .await
             .unwrap();
     }
 
     // Check: The tracer has traced some info
     {
-        let mut traces = Vec::new();
-        while let Some(info) = rx.recv().await {
-            traces.push(info);
+        // Force flush and close the tracer
+        handle.await.unwrap();
+
+        let trace_content = std::fs::read_to_string(&trace_path).unwrap();
+        let traces: String = trace_content
+            .lines()
+            .filter(|line| !line.trim().is_empty())
+            .map(|line| line.to_owned())
+            .collect();
+
+        #[cfg(false)]
+        {
+            println!("Traces:");
+            for trace in traces.lines() {
+                println!("  {:?}", trace);
+            }
         }
 
-        assert!(traces.contains(&Some("Starting slides sync...".to_owned())));
         for needle in &[
-            "[foo -bar-> bar] MKDIR",
-            "[bar -foo-> foo] MKDIR",
-            "[foo -bar-> bar] MV",
-            "[bar -foo-> foo] MV",
+            "Starting slides sync...",
+            "[foo -_-> bar] MKDIR",
+            "[bar -_-> foo] MKDIR",
+            "[foo -_-> bar] MV",
+            "[bar -_-> foo] MV",
         ] {
-            assert!(traces.iter().any(|x| x.as_ref().unwrap().contains(needle)));
+            assert!(traces.contains(needle), "Missing trace: {}", needle);
         }
-        assert!(traces.contains(&None));
     }
 
     // Check: The slides should be synchronized correctly
@@ -251,6 +284,15 @@ async fn test_execute_syncjobs_with_missing_source() {
     // Prerequisite: Setup the test context
     let ctx = setup().unwrap();
 
+    let (tracer, handle) = {
+        let trace_path = ctx.temp_dir.path().join("test.trace");
+        let (tracer, handle) = tracer::Tracer::new(&Some(&trace_path)).await.unwrap();
+        (
+            tracer.annotate_author("test_execute_syncjobs_with_missing_source".to_owned()),
+            handle.expect("Should have a handle"),
+        )
+    };
+
     // Prerequisite: Identify the volumes in the root folders
     let mut volumes = identify_env("slides", &ctx.roots).unwrap();
 
@@ -276,12 +318,116 @@ async fn test_execute_syncjobs_with_missing_source() {
             check: None,
             retries: 5,
         };
-        execute_syncjobs(&volumes, &syncjobs, false, None, &move_req).await
+        execute_syncjobs(&volumes, syncjobs, false, tracer, &move_req).await
     };
 
     // Verify that the sync jobs failed due to the missing source
     assert!(
         result.is_err(),
         "Expected error due to missing source slide"
+    );
+
+    handle.await.unwrap();
+}
+
+/// Test the real-time file monitoring behavior
+///
+/// This test verifies that the file watcher correctly detects changes in subdirectories
+/// and triggers synchronization between volumes.
+#[tokio::test]
+async fn test_file_monitoring_behavior() {
+    // Prerequisite: Setup the test context
+    let ctx = setup().unwrap();
+
+    // Prerequisite: Create a tracer that writes to a known location
+    let trace_path = ctx.temp_dir.path().join("monitoring.trace");
+
+    // Action: Start the monitoring with slide()
+    let token = {
+        let config = GlobalConfig {
+            rootsets: vec![RootsetConfig {
+                keyword: "slides".to_string(),
+                roots: ctx.roots.clone(),
+            }],
+            dry_run: false,
+            trace: Some(trace_path.clone()),
+            check: Some(Algorithm::MD5),
+            collision: CollisionPolicy::Fail,
+            safe: true,
+            retries: 5,
+        };
+        slide(config).await.unwrap()
+    };
+
+    // Wait for initial sync to complete
+    tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+
+    // Action: Create a new file in a subdirectory of one of the SOURCE slides to trigger monitoring
+    // Note: The sync direction is bar -> foo, so we need to create the file in bar/slides/foo
+    // which will then be synced to foo/slides/foo
+    let test_dir = ctx.roots[0]
+        .join("bar")
+        .join("slides")
+        .join("foo")
+        .join("test_monitoring");
+    std::fs::create_dir(&test_dir).unwrap();
+
+    // Give the watcher time to detect the directory creation
+    tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+
+    let new_file_path = test_dir.join("new_test_file.txt");
+    std::fs::write(&new_file_path, b"Hello, monitoring test!").unwrap();
+
+    // Wait for the file change to be detected and synced
+    tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+
+    // Check: Verify trace contains the file operations
+    let trace_content = {
+        // Clean shutdown to flush tracer
+        enough(token).await.unwrap();
+
+        let trace_content = std::fs::read_to_string(&trace_path).unwrap();
+
+        // Look for evidence of the directory and file operations in traces
+        assert!(
+            trace_content.contains("test_monitoring"),
+            "Trace should contain the new directory. Trace content: {}",
+            trace_content
+        );
+        assert!(
+            trace_content.contains("new_test_file.txt"),
+            "Trace should contain the new file. Trace content: {}",
+            trace_content
+        );
+
+        trace_content
+    };
+
+    // Check: Verify the directory and file were synchronized to the DESTINATION volume
+    let synced_dir = ctx.roots[0]
+        .join("foo")
+        .join("slides")
+        .join("foo")
+        .join("test_monitoring");
+    // assert!(
+    //     synced_dir.exists(),
+    //     "Directory should be synchronized to the destination: {:?}",
+    //     synced_dir
+    // );
+
+    // Check: Verify the file was synchronized to the volume
+    let synced_file_path = synced_dir.join("new_test_file.txt");
+    assert!(
+        synced_file_path.exists(),
+        "File should be synchronized to the destination: {:?}. trace content: {}",
+        synced_file_path,
+        trace_content
+    );
+
+    // Check: Verify the content of the synchronized file
+    let synced_content = std::fs::read(&synced_file_path).unwrap();
+    assert_eq!(
+        synced_content, b"Hello, monitoring test!",
+        "Synchronized file content should match"
     );
 }

@@ -1,43 +1,91 @@
 use anyhow::{bail, Result};
-use chrono::prelude::*;
-use config::GlobalConfig;
 use fs::MoveStrategy;
+use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use slide::Slide;
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
 };
 use syncjob::{SyncJob, SyncJobs};
-use tokio::{
-    fs::OpenOptions,
-    io::AsyncWriteExt,
-    sync::mpsc::{self, Sender},
-};
 use volume::Volume;
 
 #[cfg(target_os = "windows")]
 use std::ffi::CStr;
 
+use tracer::Tracer;
+
 pub mod config;
 mod fs;
 mod slide;
 mod syncjob;
+mod tracer;
 mod volume;
+
+pub use config::{Algorithm, CollisionPolicy, GlobalConfig, RootsetConfig};
 
 const DEFAULT_SLIDE_CONFIG_FILE: &str = ".slide.yml";
 
-/// Execute all the slides.
+#[allow(dead_code)]
+pub struct Token {
+    /// Watcher OS task handle. Dropped first to force the syncjob tasks to end.
+    watcher: RecommendedWatcher,
+    handles: Vec<tokio::task::JoinHandle<Result<()>>>,
+    tracer: Option<tokio::task::JoinHandle<()>>,
+}
+
+impl Token {
+    fn new(
+        watcher: RecommendedWatcher,
+        handles: Vec<tokio::task::JoinHandle<Result<()>>>,
+        tracer: Option<tokio::task::JoinHandle<()>>,
+    ) -> Self {
+        Self {
+            watcher,
+            handles,
+            tracer,
+        }
+    }
+}
+
+pub async fn enough(token: Token) -> Result<()> {
+    // TODO: Ideally this should be happening in the Drop impl for Token. But that wont let us control the results of the awaited tasks.
+
+    let watcher = token.watcher;
+    let handles = token.handles;
+    let tracer = token.tracer;
+
+    // Drop the watcher first, so that the mpsc channels can be closed
+    // and the syncjob tasks can finish
+    drop(watcher);
+
+    // Await all the handles. When every syncjob task finishes, its
+    // tracer mpsc channel will be closed
+    for handle in handles {
+        let _ = handle.await?;
+    }
+
+    // Await the tracer if any
+    if let Some(tracer) = tracer {
+        tracer.await?;
+    }
+
+    Ok(())
+}
+
+/// Monitor all the slides.
 ///
 /// This function will take the input `config`, identify the volumes and slides,
 /// and execute the sync jobs. Returns a Result indicating success or failure.
 ///
-pub async fn slide(config: GlobalConfig) -> Result<()> {
+pub async fn slide(config: GlobalConfig) -> Result<Token> {
     log::debug!("Config: {config:#?}");
 
-    let mut tracer_task = None;
+    // Maybe a tracer task handle
+    let (trace, tracer) = Tracer::new(&config.trace.as_ref()).await?;
 
     let mut volumes = HashMap::new();
 
+    // Analyze each rootset to extract volumes and slides
     for rootset_config in config.rootsets {
         let some_volumes = identify_env(&rootset_config.keyword, &rootset_config.roots);
         match some_volumes {
@@ -48,36 +96,10 @@ pub async fn slide(config: GlobalConfig) -> Result<()> {
 
     log::debug!("Volumes for all configs: {volumes:#?}");
 
+    // Now analyze the volumes to generate the sync jobs
     let syncjobs = build_syncjobs(&mut volumes)?;
 
     log::debug!("Sync jobs: {syncjobs:#?}");
-
-    // If tracing is requested, it is done via another async task
-    let trace_handle = match config.trace {
-        Some(trace) => {
-            let mut file = OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(trace)
-                .await?;
-            let (tx, mut rx) = mpsc::channel::<Option<String>>(32);
-            // Handle the traces in a separate task
-            tracer_task = Some(tokio::spawn(async move {
-                while let Some(message) = rx.recv().await {
-                    let message = match message {
-                        Some(m) => {
-                            format!("[{}] {}\n", Local::now().format("%Y-%m-%d %H:%M:%S"), m)
-                        }
-                        None => "".to_owned(),
-                    };
-                    // Best effort
-                    let _ = file.write_all(message.as_bytes()).await;
-                }
-            }));
-            Some(tx)
-        }
-        None => None,
-    };
 
     let move_req = MoveStrategy {
         collision: config.collision,
@@ -86,13 +108,10 @@ pub async fn slide(config: GlobalConfig) -> Result<()> {
         retries: 5,
     };
 
-    let result = execute_syncjobs(&volumes, &syncjobs, config.dry_run, trace_handle, &move_req).await;
+    let (watcher, handles) =
+        execute_syncjobs(&volumes, syncjobs, config.dry_run, trace, &move_req).await?;
 
-    if let Some(tracer_task) = tracer_task {
-        tracer_task.await?;
-    }
-
-    result
+    Ok(Token::new(watcher, handles, tracer))
 }
 
 /// Tidy up the volumes.
@@ -271,14 +290,12 @@ fn build_syncjobs(volumes: &mut HashMap<String, Volume>) -> Result<SyncJobs> {
             if src_name == dst_name {
                 continue;
             }
+            log::debug!("Evaluating routes from {src_name} to {dst_name}");
 
             // If the destination volume is available, its a direct slide
             if volumes.contains_key(dst_name) && !volumes[dst_name].disabled {
-                syncjobs.push(SyncJob {
-                    src: src_name.to_owned(),
-                    dst: dst_name.to_owned(),
-                    issue: dst_name.to_owned(),
-                });
+                syncjobs.push(SyncJob::new(src_name, dst_name, dst_name));
+                log::debug!(" + Added direct route from {src_name} to {dst_name}");
                 continue;
             }
 
@@ -286,14 +303,13 @@ fn build_syncjobs(volumes: &mut HashMap<String, Volume>) -> Result<SyncJobs> {
                 // If the slide has a default route, and the default route is available, its a indirect slide
                 Some(def_route_name) => {
                     if volumes.contains_key(def_route_name) && !volumes[def_route_name].disabled {
-                        syncjobs.push(SyncJob {
-                            src: src_name.to_owned(),
-                            dst: def_route_name.to_owned(),
-                            issue: dst_name.to_owned(),
-                        });
+                        syncjobs.push(SyncJob::new(src_name, def_route_name, dst_name));
+                        log::debug!(" + Added indirect route from {src_name} to {dst_name} via {def_route_name}");
                         continue;
                     }
-                    log::info!("\"{dst_name}\" and default route \"{def_route_name}\" not available");
+                    log::info!(
+                        "\"{dst_name}\" and default route \"{def_route_name}\" not available"
+                    );
                 }
                 _ => {
                     log::info!("\"{dst_name}\" not available and no default route");
@@ -304,11 +320,11 @@ fn build_syncjobs(volumes: &mut HashMap<String, Volume>) -> Result<SyncJobs> {
 
     // Create the slides that are missing in the destination volumes
     for syncjob in &syncjobs {
-        if !volumes[&syncjob.dst].slides.contains_key(&syncjob.issue) {
+        if !volumes[&syncjob.via].slides.contains_key(&syncjob.dst) {
             volumes
-                .get_mut(&syncjob.dst)
+                .get_mut(&syncjob.via)
                 .unwrap()
-                .create_slide(&syncjob.issue)?;
+                .create_slide(&syncjob.dst)?;
         }
     }
 
@@ -317,51 +333,103 @@ fn build_syncjobs(volumes: &mut HashMap<String, Volume>) -> Result<SyncJobs> {
 
 /// Execute the sync jobs.
 ///
-/// This function will execute the sync jobs in parallel.
+/// This function will execute the sync jobs, ideally, in parallel.
 ///
 async fn execute_syncjobs(
     volumes: &HashMap<String, Volume>,
-    syncjobs: &SyncJobs,
+    mut syncjobs: SyncJobs,
     dry_run: bool,
-    trace_handle: Option<Sender<Option<String>>>,
+    tracer: Tracer,
     move_req: &MoveStrategy,
-) -> Result<()> {
-    let mut handles = Vec::new();
-
-    if let Some(trace_handle) = &trace_handle {
-        trace_handle
-            .send(Some("Starting slides sync...".to_owned()))
-            .await?;
+) -> Result<(RecommendedWatcher, Vec<tokio::task::JoinHandle<Result<()>>>)> {
+    let mut watcher_db = Vec::new();
+    for syncjob in syncjobs.iter_mut() {
+        let path = volumes[&syncjob.src].slides[&syncjob.dst]
+            .path
+            .canonicalize()?;
+        let trigger = if let Some(trigger) = syncjob.take_trigger() {
+            trigger
+        } else {
+            bail!("No trigger found for sync job {:?}", syncjob);
+        };
+        watcher_db.push((path, trigger));
     }
+
+    let mut watcher = {
+        let tracer = tracer.annotate_author("Watcher".to_string());
+        tracer.async_log("Init", "Starting slides sync...").await?;
+
+        notify::recommended_watcher(
+            move |res: std::result::Result<notify::Event, notify::Error>| {
+                if let Ok(event) = res {
+                    match event.kind {
+                        EventKind::Modify(_) | EventKind::Create(_) | EventKind::Remove(_) => {
+                            let _ = tracer
+                                .sync_log("Event", &format!("Filesystem event: {:?} ", event));
+                            for (path, trigger) in &watcher_db {
+                                // Check if any event path is within the watched directory
+                                for event_path in &event.paths {
+                                    let event_path = event_path.canonicalize();
+                                    if let Ok(event_path) = event_path {
+                                        let _deleteme = tracer.sync_log(
+                                            "Event",
+                                            &format!("launching {}", event_path.display()),
+                                        );
+                                        // FIXME: Maybe this doesnt work
+                                        if event_path.starts_with(path) {
+                                            if trigger.capacity() > 0 {
+                                                let _deleteme =
+                                                    tracer.sync_log("Event", "launched");
+                                                let _ = trigger.blocking_send(());
+                                            }
+                                            // Otherwise skip this event, its ok
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            },
+        )?
+    };
 
     // TODO: Measure the next block
     {
-        for syncjob in syncjobs {
+        let mut handles = Vec::new();
+
+        for mut syncjob in syncjobs.into_iter() {
             log::debug!("Syncing {:?}", syncjob);
-            let syncjob = syncjob.clone();
-            let src = volumes[&syncjob.src].slides[&syncjob.issue].path.clone();
-            let dst = volumes[&syncjob.dst].slides[&syncjob.issue].path.clone();
-            let trace_handle = trace_handle.clone();
+            let src = volumes[&syncjob.src].slides[&syncjob.dst].path.clone();
+            let dst = volumes[&syncjob.via].slides[&syncjob.dst].path.clone();
+            let mut trace = tracer.annotate_author(format!("{:?}", syncjob));
             let move_req = move_req.clone();
+
+            watcher.watch(&src, RecursiveMode::Recursive)?;
+
+            // Spawn a new tokio async task for this syncjob
             let handle = tokio::spawn(async move {
-                if let Err(e) = sync_slide(&syncjob, &src, &dst, dry_run, trace_handle, &move_req).await {
-                    bail!("Error syncing {:?} -> {:?}: {:?}", src, dst, e);
+                loop {
+                    if let Err(e) =
+                        sync_slide(&syncjob, &src, &dst, dry_run, &mut trace, &move_req).await
+                    {
+                        bail!("Error syncing {:?} -> {:?}: {:?}", src, dst, e);
+                    }
+                    // None is received when the mpsc::Sender is dropped
+                    if syncjob.borrow_receiver().recv().await.is_none() {
+                        return Ok(());
+                    }
                 }
-                Ok(())
             });
             handles.push(handle);
         }
 
-        for handle in handles {
-            handle.await??;
-        }
+        Ok((watcher, handles))
     }
 
-    if let Some(trace_handle) = &trace_handle {
-        trace_handle.send(None).await?;
-    }
-
-    Ok(())
+    // The anonymous tracer will be dropped here
 }
 
 /// Sync the contents of a slide.
@@ -371,18 +439,17 @@ async fn sync_slide(
     src: &PathBuf,
     dst: &Path,
     dry_run: bool,
-    trace_handle: Option<Sender<Option<String>>>,
+    tracer: &mut Tracer,
     move_req: &MoveStrategy,
 ) -> Result<()> {
     log::info!("Syncing {:?}", syncjob);
-
-    let trace_handle = trace_handle.map(|t| (t, syncjob));
 
     let entries = src.read_dir();
     if entries.is_err() {
         bail!("{src:?} cannot be read");
     }
 
+    // Sync every folder inside the slide
     for entry in entries?.flatten() {
         let entry_path = entry.path();
         let file_type = entry.file_type();
@@ -393,7 +460,7 @@ async fn sync_slide(
                 continue;
             }
             let dst = dst.join(entry.file_name());
-            fs::sync(&entry_path, &dst, dry_run, &trace_handle, move_req).await?;
+            fs::sync(&entry_path, &dst, dry_run, tracer, move_req).await?;
         }
     }
 

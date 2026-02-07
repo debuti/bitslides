@@ -8,8 +8,11 @@ pub const DEFAULT_KEYWORD: &str = "Slides";
 ///
 #[derive(Deserialize)]
 pub struct Config {
+    // Slides folder keyword
     pub keyword: Option<String>,
+    // Root folders to watch
     pub roots: Vec<String>,
+    // Optional trace file path format
     pub trace: Option<String>,
 }
 

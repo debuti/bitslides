@@ -1,0 +1,32 @@
+[package]
+name = "bitslideslib"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+description = "Core library for synchronizing volumes in the background"
+
+[dependencies]
+anyhow.workspace = true
+chrono.workspace = true
+log.workspace = true
+serde.workspace = true
+serde_yaml.workspace = true
+simplelog.workspace = true
+tokio.workspace = true
+
+# MIT
+checksums = "0.9"
+
+# CC0
+notify = "8.2"
+
+[dependencies.windows]
+version = "0.58"
+features = ["Win32_Storage_FileSystem"]
+
+[dev-dependencies]
+# MIT OR Apache-2.0
+pretty_assertions = "1.4"
+tempfile = "3.14"

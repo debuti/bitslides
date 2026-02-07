@@ -13,7 +13,7 @@ Watches your volumes (HDD, USB drive, network mounted storage, etc.) and synchro
 
 We all have multiple devices lying around: your personal computer, an external drive to save media, the smartphone, or even some cloud storage. Usually each device is dedicated to some specific tasks, the personal computer is used for photo editing, while the cloud storage is used to save your loved mp3s. Manually sending new contents to each device is a repetitive task that can be avoided using automation, and this is the gap `bitslides` fills, managing the transfer of information between devices.
 
-Let's review its features through an example. 
+Let's review its features through an example.
 
 ### Example Workflow with bitslides
 
@@ -30,15 +30,13 @@ This is where `bitslides` comes to the rescue. By configuring slides (mailbox-li
 
 *Donald* configures `bitslides` on his laptop, pendrive, and personal server. For example:
 
-On the laptop: 
+On the laptop:
  * A slide for DVD ISO files (`/media/Laptop/Slides/Server/Movies/`).
  * A slide for music files (`/media/Pendrive/Slides/Laptop/Music/`).
 On the server:
  * A slide for MP4s (`/media/Server/Slides/Laptop/Movies/`).
 
-#### One shot behavior
-
-> Daemon mode is first prio on the TO DO list
+#### Continuous monitoring behavior
 
 When ran, `bitslides` automatically detects the attached volumes, checks for slides, and synchronizes the relevant files. For *Donald*:
 
@@ -106,7 +104,7 @@ trace: "bitslides.%Y%m%d_%H%M%S.log"
 
 ### Volume config file
 
-Placed on the "Slides" folder of any Volume, allows for Volume-level fine tuning. 
+Placed on the "Slides" folder of any Volume, allows for Volume-level fine tuning.
 
 ```
 # name: Name of the volume.
@@ -122,7 +120,7 @@ name: "myvolume"
 ### Slide config file
 
 ```
-# route: 
+# route:
 route: "myothervol"
 ```
 
@@ -137,3 +135,57 @@ route: "myothervol"
 ## Contributions Welcome
 
 `bitslides` is an open-source project! If you’d like to contribute, head over to the [GitHub repository](https://github.com/debuti/bitslides). Whether it’s fixing bugs, suggesting features, or improving documentation, your help is appreciated.
+
+### Development environment
+
+Installing pre-commit is recommended for saving CI time on the checks job
+
+```bash
+python3 -m pip install pre-commit
+pre-commit install
+```
+
+### Release process
+
+This project uses [cargo-dist](https://axodotdev.github.io/cargo-dist/book/) to publish releases.
+
+```bash
+# This will update your cargo-dist to the latest available version
+cargo install cargo-dist --locked
+
+# This will update the CI script that will run on
+# * pull requests, where no release will happen
+# * tags, that will create an actual release
+dist init
+#  Yes to update
+#  Select the following platforms
+#   [x] Apple Silicon macOS (aarch64-apple-darwin)
+#   [x] ARM64 Linux (aarch64-unknown-linux-gnu)
+#   [ ] ARM64 Windows (aarch64-pc-windows-msvc)
+#   [x] Intel macOS (x86_64-apple-darwin)
+#   [x] x64 Linux (x86_64-unknown-linux-gnu)
+#   [x] x64 MUSL Linux (x86_64-unknown-linux-musl)
+#   [x] x64 Windows (x86_64-pc-windows-msvc)
+#  Select the following installers
+#   [x] shell
+#   [x] powershell
+#   [ ] npm
+#   [ ] homebrew
+#   [x] msi
+
+# Fix the generated CI script manually
+#  * Undo changes on the `checks` job
+#  * Undo changes on the needs of `plan` job
+
+# Make sure the plan is functional, otherwise fix it
+dist plan
+
+# Commit and push your changes. Merge the pull request.
+...
+
+# Actually push the tag up (this triggers dist's CI)
+# * Make sure the version number matches the one configured in Cargo.toml
+# * Only works on main
+git tag v0.1.0 # Mind the v
+git push --tags
+```

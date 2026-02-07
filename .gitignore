@@ -33,3 +33,6 @@ coverage.xml
 test/arena/original/
 test/arena/processed/
 test/arena/expected/
+
+# Backup files
+*.bck

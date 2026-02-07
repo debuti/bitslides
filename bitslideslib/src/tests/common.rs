@@ -1,6 +1,4 @@
-#[cfg(any())]
 use log::LevelFilter;
-#[cfg(any())]
 use simplelog::{ColorChoice, Config, TermLogger, TerminalMode};
 use std::fs::File;
 use std::io::Result;
@@ -8,7 +6,7 @@ use std::io::Write;
 use std::path::Path;
 use std::path::PathBuf;
 
-use crate::bitslideslib::volume::DEFAULT_VOLUME_CONFIG_FILE;
+use crate::volume::DEFAULT_VOLUME_CONFIG_FILE;
 
 use super::DEFAULT_SLIDE_CONFIG_FILE;
 
@@ -43,6 +41,10 @@ impl TestFolder {
     /// Helper function to format with an indentation level.
     fn fmt_with_indent(&self, f: &mut std::fmt::Formatter<'_>, indent: usize) -> std::fmt::Result {
         let indent_str = " ".repeat(indent);
+        for (folder_name, folder) in self.folders {
+            writeln!(f, "{}- {}", indent_str, folder_name)?;
+            folder.fmt_with_indent(f, indent + 2)?;
+        }
         for (file_name, file_contents) in self.files {
             writeln!(
                 f,
@@ -51,10 +53,6 @@ impl TestFolder {
                 file_name,
                 file_contents.len()
             )?;
-        }
-        for (folder_name, folder) in self.folders {
-            writeln!(f, "{}- {}", indent_str, folder_name)?;
-            folder.fmt_with_indent(f, indent + 2)?;
         }
         Ok(())
     }
@@ -123,10 +121,20 @@ fn install_scenario(scenario: &TestFolder, tempdir: tempfile::TempDir) -> Result
 
 /// Sets up a test context for unit tests.
 ///
+/// > Some minor nomenclature: Slides ending in underscore means they are not present. This way its easier to read.
+///
 pub(crate) fn setup() -> Result<TestContext> {
-    #[cfg(any())]
+    #[cfg(false)]
+    {
+        // Print all environment variables.
+        for (key, value) in std::env::vars() {
+            println!("{key}: {value}");
+        }
+    }
+
     let _ = TermLogger::init(
-        LevelFilter::Trace,
+        // LevelFilter::Trace,
+        LevelFilter::Off,
         Config::default(),
         TerminalMode::Stderr,
         ColorChoice::Auto,
@@ -185,6 +193,7 @@ pub(crate) fn setup() -> Result<TestContext> {
         ],
         files: &[("not_a_slide", "abcdef".as_bytes())],
     };
+
     const BAR: TestFolder = TestFolder {
         folders: &[(
             "slides",
@@ -229,6 +238,7 @@ pub(crate) fn setup() -> Result<TestContext> {
         )],
         files: &[("not_a_slide", "abcdef".as_bytes())],
     };
+
     const BAZ: TestFolder = TestFolder {
         folders: &[(
             "slides",
@@ -256,14 +266,14 @@ pub(crate) fn setup() -> Result<TestContext> {
                         },
                     ),
                     (
-                        "qux",
+                        "qux_",
                         TestFolder {
                             folders: &[],
                             files: &[(DEFAULT_SLIDE_CONFIG_FILE, "route: bar".as_bytes())],
                         },
                     ),
                     (
-                        "quux",
+                        "quux_",
                         TestFolder {
                             folders: &[],
                             files: &[],
@@ -275,6 +285,7 @@ pub(crate) fn setup() -> Result<TestContext> {
         )],
         files: &[],
     };
+
     const ELS: TestFolder = TestFolder {
         folders: &[(
             "slides",
@@ -302,14 +313,14 @@ pub(crate) fn setup() -> Result<TestContext> {
                         },
                     ),
                     (
-                        "qux",
+                        "qux_",
                         TestFolder {
                             folders: &[],
                             files: &[],
                         },
                     ),
                     (
-                        "quux",
+                        "quux_",
                         TestFolder {
                             folders: &[],
                             files: &[(
@@ -324,6 +335,7 @@ pub(crate) fn setup() -> Result<TestContext> {
         )],
         files: &[],
     };
+
     const DIS: TestFolder = TestFolder {
         folders: &[(
             "slides",
@@ -388,7 +400,7 @@ pub(crate) fn setup() -> Result<TestContext> {
     let tempdir = tempfile::tempdir()?;
 
     // Print the scenario for debugging purposes
-    println!("{}", SCENARIO);
+    println!("Current scenario:\n{}", SCENARIO);
 
     install_scenario(&SCENARIO, tempdir)
 }

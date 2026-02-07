@@ -26,7 +26,7 @@ impl Slide {
     }
 }
 
-#[cfg(any())]
+#[cfg(false)]
 impl std::fmt::Display for Slide {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if self.or_else.is_none() {
