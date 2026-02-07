@@ -36,9 +36,7 @@ On the laptop:
 On the server:
  * A slide for MP4s (`/media/Server/Slides/Laptop/Movies/`).
 
-#### One shot behavior
-
-> Daemon mode is first prio on the TO DO list
+#### Continuous monitoring behavior
 
 When ran `bitslides` automatically detects the attached volumes, checks for slides, and synchronizes the relevant files. For *Donald*:
 
@@ -187,6 +185,6 @@ dist plan
 # Actually push the tag up (this triggers dist's CI)
 # * Make sure the version number matches the one configured in Cargo.toml
 # * Only works on main
-git tag v0.1.0
+git tag v0.1.0 # Mind the v
 git push --tags
 ```
