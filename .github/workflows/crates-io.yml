@@ -1,13 +1,19 @@
 name: crates.io publishing
 
 on:
-  pull_request:
+  pull_request: # FIXME: Remove
   push:
     tags:
       - '**[0-9]+.[0-9]+.[0-9]+*'
 
 jobs:
+  custom-release-checks:
+    uses: ./.github/workflows/release-checks.yml
+    secrets: inherit
+
   deploy:
+    needs:
+      - custom-release-checks
     runs-on: ubuntu-latest
     env:
       TAG: ${{ github.ref_name }}
@@ -23,36 +29,6 @@ jobs:
         with:
           toolchain: stable
 
-      - name: Skip early
-        run: |
-          # Skip this check if running on a pull_request
-          if [[ "${TAG}" == *merge ]]; then
-            echo "skip=1" >> $GITHUB_ENV
-            exit 0
-          fi
-
-      - name: Check branch is main
-        if: env.skip != '1'
-        run: |
-          BRANCH=$(git branch -r --contains ${TAG} | grep 'origin/main' | head -n 1)
-          if [ -z "${BRANCH}" ]; then
-            echo "Error: Tag must be created from main branch. Branches:"
-            git branch -r --contains ${TAG}
-            exit 1
-          fi
-          echo "Branch check passed: commit is on main"
-
-      - name: Check that Cargo.toml version matches tag
-        if: env.skip != '1'
-        run: |
-          CARGO_VERSION=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')
-          if [ "$CARGO_VERSION" != "${TAG#v}" ]; then
-            echo "Error: Cargo.toml version ($CARGO_VERSION) does not match tag (${TAG#v})"
-            exit 1
-          fi
-          echo "Version check passed: $CARGO_VERSION"
-
       - name: Publish on crates.io
-        if: env.skip != '1'
         run: |
-          cargo publish --provenance
+          #cargo publish --provenance
