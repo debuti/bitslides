@@ -243,9 +243,20 @@ where
         None
     };
 
+    // Generate WIP filename if safe mode is enabled
+    // For photo.jpg, this creates .photo.jpg.wip (a hidden sidecar file)
+    // This preserves the full filename and avoids extension loss and collisions
+    let wip_path;
     let wip = if request.safe {
-        // FIXME: If the file is photo.jpg the wip needs to be .photo.jpg.wip
-        &dst_file.with_extension("wip")
+        wip_path = {
+            let parent = dst_file.parent().unwrap_or_else(|| Path::new("."));
+            let filename = dst_file
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("file");
+            parent.join(format!(".{}.wip", filename))
+        };
+        &wip_path
     } else {
         dst_file
     };

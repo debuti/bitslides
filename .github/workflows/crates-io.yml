@@ -8,7 +8,6 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
     env:
       TAG: ${{ github.ref_name }}
     permissions:
@@ -22,6 +21,16 @@ jobs:
         uses: ./.github/actions/common
         with:
           toolchain: stable
+
+      - name: Check branch is main
+        run: |
+          BRANCH=$(git branch -r --contains ${{ github.sha }} | grep 'origin/main' | head -n 1)
+          if [ -z "$BRANCH" ]; then
+            echo "Error: Tag must be created from main branch. Branches:"
+            git branch -r --contains ${{ github.sha }}
+            exit 1
+          fi
+          echo "Branch check passed: commit is on main"
 
       - name: Check that Cargo.toml version matches tag
         run: |

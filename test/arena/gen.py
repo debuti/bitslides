@@ -15,6 +15,7 @@ def del_folder(p):
         shutil.rmtree(p, ignore_errors=True)
         p.rmdir()
     except Exception:
+        # Ignore errors
         pass
 
 

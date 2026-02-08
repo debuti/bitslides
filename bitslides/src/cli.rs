@@ -63,7 +63,7 @@ pub fn cli() -> Command {
                 .long("non-safe")
                 .value_name("safe")
                 .help("The \"safe\" mode creates a temporary file for each file. If the move is successful, the temporary file is deleted. This option disables that behavior.")
-                .action(ArgAction::SetFalse)
+                .action(ArgAction::SetTrue) // Hence is false (or safe) by default
                 .required(false),
         )
         .arg(
