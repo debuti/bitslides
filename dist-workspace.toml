@@ -22,3 +22,5 @@ targets = [
 install-path = "CARGO_HOME"
 # Whether to install an updater program
 install-updater = false
+# Plan jobs to run in CI
+plan-jobs = ["./release-checks"]

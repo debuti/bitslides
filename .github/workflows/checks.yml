@@ -1,4 +1,4 @@
-name: Minimum set of checks
+name: Basic checks
 
 on:
   pull_request:
@@ -139,3 +139,15 @@ jobs:
 
       - name: Check Documentation
         run: cargo doc --no-deps --document-private-items
+
+  # Call release workflows only on tag pushes (not on PRs)
+  call-crates-io:
+    needs:
+      - coverage
+      - doc
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+    permissions:
+      contents: write
+      id-token: write
+    uses: ./.github/workflows/crates-io.yml
+    secrets: inherit
