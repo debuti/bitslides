@@ -28,4 +28,4 @@ jobs:
 
       - name: Publish on crates.io
         run: |
-          #cargo publish --provenance
+          cargo publish --provenance
