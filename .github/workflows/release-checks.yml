@@ -9,6 +9,14 @@ jobs:
     env:
       TAG: ${{ github.ref_name }}
     steps:
+      - name: Wait for checks workflow to complete
+        uses: lewagon/wait-on-check-action@v1.3.4
+        with:
+          ref: ${{ github.ref }}
+          check-name: 'doc'  # Wait for the last job in checks.yml
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          wait-interval: 10
+
       - name: Skip early
         run: |
           # Skip this check if running on a pull_request

@@ -173,10 +173,6 @@ dist init
 #   [ ] homebrew
 #   [x] msi
 
-# Fix the generated CI script manually
-#  * Undo changes on the `checks` job
-#  * Undo changes on the needs of `plan` job
-
 # Make sure the plan is functional, otherwise fix it
 dist plan
 
@@ -185,7 +181,7 @@ dist plan
 
 # Actually push the tag up (this triggers dist's CI)
 # * Make sure the version number matches the one configured in Cargo.toml
-# * Only works on main
+# * Only tags on main
 git tag v0.1.0 # Mind the v
 git push --tags
 ```
