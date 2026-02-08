@@ -1,0 +1,23 @@
+name: Common Setup
+description: Setup steps for Rust
+inputs:
+  toolchain:
+    description: Rust toolchain version
+    default: stable
+    required: false
+runs:
+  using: "composite"
+  steps:
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: ${{ inputs.toolchain }}
+        components: clippy, rustfmt
+
+    - name: Cache Cargo registry
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
