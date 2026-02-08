@@ -63,10 +63,11 @@ jobs:
 
       - name: Check branch is main
         run: |
-          BRANCH=$(git branch -r --contains ${{ github.sha }} | grep 'origin/main' | head -n 1)
+          git fetch --prune --unshallow
+          BRANCH=$(git branch -r --contains ${TAG} | grep 'origin/main' | head -n 1)
           if [ -z "$BRANCH" ]; then
             echo "Error: Tag must be created from main branch. Branches:"
-            git branch -r --contains ${{ github.sha }}
+            git branch -r --contains ${TAG}
             exit 1
           fi
           echo "Branch check passed: commit is on main"
