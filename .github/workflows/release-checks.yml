@@ -20,6 +20,8 @@ jobs:
       - name: Checkout code
         if: env.skip != '1'
         uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
 
       - name: Common setup
         if: env.skip != '1'

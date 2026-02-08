@@ -1,6 +1,6 @@
 # bitslides
 
-[![Test](https://github.com/debuti/bitslides/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/debuti/bitslides/actions/workflows/test.yml)
+[![Test](https://github.com/debuti/bitslides/actions/workflows/checks.yml/badge.svg?branch=main)](https://github.com/debuti/bitslides/actions/workflows/checks.yml)
 [![Coverage](https://codecov.io/gh/debuti/bitslides/branch/main/graph/badge.svg)](https://codecov.io/gh/debuti/bitslides)
 
 Watches your volumes (HDD, USB drive, network mounted storage, etc.) and synchronizes the slides associated to them

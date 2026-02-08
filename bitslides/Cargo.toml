@@ -13,7 +13,7 @@ name = "bitslides"
 path = "src/main.rs"
 
 [dependencies]
-bitslideslib = { path = "../bitslideslib" }
+bitslideslib.workspace = true
 anyhow.workspace = true
 chrono.workspace = true
 log.workspace = true

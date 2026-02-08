@@ -10,6 +10,7 @@ repository = "https://github.com/debuti/bitslides"
 license = "GPL-3.0-only"
 
 [workspace.dependencies]
+bitslideslib = { path = "bitslideslib", version = "0.1.2" }
 # MIT OR Apache-2.0
 anyhow = "1.0"
 chrono = "0.4"
