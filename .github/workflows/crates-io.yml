@@ -1,6 +1,7 @@
 name: crates.io publishing
 
 on:
+  pull_request:
   push:
     tags:
       - '**[0-9]+.[0-9]+.[0-9]+*'
@@ -22,11 +23,19 @@ jobs:
         with:
           toolchain: stable
 
-      - name: Check branch is main
+      - name: Skip early
         run: |
-          git fetch --prune --unshallow
+          # Skip this check if running on a pull_request
+          if [[ "${TAG}" == *merge ]]; then
+            echo "skip=1" >> $GITHUB_ENV
+            exit 0
+          fi
+
+      - name: Check branch is main
+        if: env.skip != '1'
+        run: |
           BRANCH=$(git branch -r --contains ${TAG} | grep 'origin/main' | head -n 1)
-          if [ -z "$BRANCH" ]; then
+          if [ -z "${BRANCH}" ]; then
             echo "Error: Tag must be created from main branch. Branches:"
             git branch -r --contains ${TAG}
             exit 1
@@ -34,6 +43,7 @@ jobs:
           echo "Branch check passed: commit is on main"
 
       - name: Check that Cargo.toml version matches tag
+        if: env.skip != '1'
         run: |
           CARGO_VERSION=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')
           if [ "$CARGO_VERSION" != "${TAG#v}" ]; then
@@ -43,4 +53,6 @@ jobs:
           echo "Version check passed: $CARGO_VERSION"
 
       - name: Publish on crates.io
-        run: cargo publish --provenance
+        if: env.skip != '1'
+        run: |
+          cargo publish --provenance
