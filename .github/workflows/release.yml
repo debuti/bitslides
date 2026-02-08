@@ -66,11 +66,11 @@ jobs:
       - name: Check branch is main
         run: |
           # Skip this check if running on a pull_request
-          if [[ "$TAG" == *"-merge" ]]; then
+          if [[ "${TAG}" != *"merge" ]]; then
             exit 0
           fi
           BRANCH=$(git branch -r --contains ${TAG} | grep 'origin/main' | head -n 1)
-          if [ -z "$BRANCH" ]; then
+          if [ -z "${BRANCH}" ]; then
             echo "Error: Tag must be created from main branch. Branches:"
             git branch -r --contains ${TAG}
             exit 1
@@ -80,7 +80,7 @@ jobs:
       - name: Check that Cargo.toml version matches tag
         run: |
           # Skip this check if running on a pull_request
-          if [[ "$TAG" == *"-merge" ]]; then
+          if [[ "$TAG" == *"merge" ]]; then
             exit 0
           fi
           CARGO_VERSION=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')
