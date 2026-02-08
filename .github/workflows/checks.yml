@@ -146,5 +146,8 @@ jobs:
       - coverage
       - doc
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+    permissions:
+      contents: write
+      id-token: write
     uses: ./.github/workflows/crates-io.yml
     secrets: inherit
