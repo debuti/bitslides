@@ -1,7 +1,6 @@
 use anyhow::{bail, Result};
 use fs::MoveStrategy;
 use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
-use slide::Slide;
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
@@ -20,57 +19,10 @@ mod slide;
 mod syncjob;
 mod tracer;
 mod volume;
+mod token;
 
 pub use config::{Algorithm, CollisionPolicy, GlobalConfig, RootsetConfig};
-
-const DEFAULT_SLIDE_CONFIG_FILE: &str = ".slide.yml";
-
-#[allow(dead_code)]
-pub struct Token {
-    /// Watcher OS task handle. Dropped first to force the syncjob tasks to end.
-    watcher: RecommendedWatcher,
-    handles: Vec<tokio::task::JoinHandle<Result<()>>>,
-    tracer: Option<tokio::task::JoinHandle<()>>,
-}
-
-impl Token {
-    fn new(
-        watcher: RecommendedWatcher,
-        handles: Vec<tokio::task::JoinHandle<Result<()>>>,
-        tracer: Option<tokio::task::JoinHandle<()>>,
-    ) -> Self {
-        Self {
-            watcher,
-            handles,
-            tracer,
-        }
-    }
-}
-
-pub async fn enough(token: Token) -> Result<()> {
-    // TODO: Ideally this should be happening in the Drop impl for Token. But that wont let us control the results of the awaited tasks.
-
-    let watcher = token.watcher;
-    let handles = token.handles;
-    let tracer = token.tracer;
-
-    // Drop the watcher first, so that the mpsc channels can be closed
-    // and the syncjob tasks can finish
-    drop(watcher);
-
-    // Await all the handles. When every syncjob task finishes, its
-    // tracer mpsc channel will be closed
-    for handle in handles {
-        let _ = handle.await?;
-    }
-
-    // Await the tracer if any
-    if let Some(tracer) = tracer {
-        tracer.await?;
-    }
-
-    Ok(())
-}
+pub use token::Token;
 
 /// Monitor all the slides.
 ///
@@ -87,7 +39,7 @@ pub async fn slide(config: GlobalConfig) -> Result<Token> {
 
     // Analyze each rootset to extract volumes and slides
     for rootset_config in config.rootsets {
-        let some_volumes = identify_env(&rootset_config.keyword, &rootset_config.roots);
+        let some_volumes = rootset_config.identify_env();
         match some_volumes {
             Ok(v) => volumes.extend(v),
             Err(_) => log::warn!("Error processing some volumes"),
@@ -138,140 +90,6 @@ pub async fn tidy_up() {
      */
 }
 
-/// Identify volumes inside a each root folder.
-///
-/// A volume is a folder that contains a slides subfolder (or the chosen keyword).
-/// This subfolder contains the folders whose names will have to match the name of other volumes.
-///
-fn identify_volumes(root: &Path, keyword: &str) -> Result<HashMap<String, Volume>> {
-    let mut volumes = HashMap::new();
-
-    // Implies .exists()
-    if !root.is_dir() {
-        bail!("{} is not a folder", root.to_string_lossy());
-    }
-
-    let entries = root.read_dir();
-    if entries.is_err() {
-        bail!("{} cannot be read", root.to_string_lossy());
-    }
-
-    // Analyze the contents of the root folder
-    for entry in entries?.flatten() {
-        let file_type = entry.file_type();
-        if let Ok(file_type) = file_type {
-            if file_type.is_dir() {
-                if let Some(volume) = Volume::from_path(entry.path(), keyword) {
-                    volumes.insert(volume.name.clone(), volume);
-                }
-            }
-        }
-    }
-
-    Ok(volumes)
-}
-
-/// Identify the slides inside a volume.
-///
-/// Mutates the volume by adding the slides found in the slides subfolder.
-///
-fn identify_slides(volume: &mut Volume) -> Result<()> {
-    let subfolders = volume.path.join(&volume.keyword).read_dir();
-
-    if subfolders.is_err() {
-        bail!("Unable to read the folder: {volume:?}");
-    }
-
-    for entry in subfolders?.flatten() {
-        if let Ok(entry_metadata) = entry.metadata() {
-            if entry_metadata.is_dir() {
-                let slide_fullpath = entry.path();
-                let slide_name = slide_fullpath
-                    .file_name()
-                    .unwrap()
-                    .to_string_lossy()
-                    .to_string();
-
-                // Try to fetch the slide configuration if any
-                let slide_conf = {
-                    let slide_conf =
-                        config::SlideConfig::new(slide_fullpath.join(DEFAULT_SLIDE_CONFIG_FILE));
-                    match slide_conf {
-                        Ok(s) => s.route,
-                        Err(_) => None,
-                    }
-                };
-
-                volume.add_slide(Slide::new(slide_name, slide_fullpath, slide_conf));
-            }
-        }
-    }
-
-    Ok(())
-}
-
-/// Gather information about the environment.
-///
-/// This function will identify the volumes and slides for each volume in the current system.
-///
-pub fn identify_env(keyword: &str, roots: &[PathBuf]) -> Result<HashMap<String, Volume>> {
-    let mut volumes: HashMap<String, Volume> = HashMap::new();
-
-    // Identify volumes
-    {
-        // Identify the volumes in each root
-        for root in roots {
-            match identify_volumes(root, keyword) {
-                Ok(v) => volumes.extend(v),
-                Err(e) => log::warn!("{e}"),
-            }
-        }
-
-        // Under Windows we may have volumes as drives (e. C:, D:, etc)
-        // TODO: Add an option to opt-out of this analysis
-        #[cfg(target_os = "windows")]
-        {
-            // Retrieve the drives using the windows api
-            let drives = {
-                let mut result = Vec::new();
-                const MAX_BUF: usize = 1024;
-                let mut buf = [0u8; MAX_BUF];
-                let length = unsafe {
-                    windows::Win32::Storage::FileSystem::GetLogicalDriveStringsA(Some(&mut buf))
-                } as usize;
-                if length > MAX_BUF {
-                    log::error!(
-                        "The hardcoded buffer is not big enough to retrieve all logical drives"
-                    );
-                }
-                let mut ptr = 0;
-                while ptr < length {
-                    let drive = CStr::from_bytes_until_nul(&buf[ptr..]).unwrap();
-                    let offset_to_next = 1 + drive.count_bytes();
-                    ptr += offset_to_next;
-                    result.push(PathBuf::from(drive.to_str().unwrap()));
-                }
-                result
-            };
-
-            for drive in drives {
-                if let Some(volume) = Volume::from_path(drive, keyword) {
-                    volumes.insert(volume.name.clone(), volume);
-                }
-            }
-        }
-    }
-
-    // Identify the slides of each volume
-    for (_, volume) in volumes.iter_mut() {
-        match identify_slides(volume) {
-            Ok(_) => {}
-            Err(e) => log::warn!("{e}"),
-        }
-    }
-
-    Ok(volumes)
-}
 
 /// Compose the sync jobs from the volume information.
 ///

@@ -4,8 +4,6 @@ use super::slide::Slide;
 use anyhow::Result;
 use std::{collections::HashMap, path::PathBuf};
 
-pub const DEFAULT_VOLUME_CONFIG_FILE: &str = ".volume.yml";
-
 /// Volume representation.
 ///
 /// A volume is a storage unit that contains a slides folder (or the chosen keyword).
@@ -46,7 +44,7 @@ impl Volume {
 
             // Try to retrieve the configured name first
             let volume_conf =
-                config::VolumeConfig::new(slides_path.join(DEFAULT_VOLUME_CONFIG_FILE));
+                config::VolumeConfig::new(slides_path.join(config::DEFAULT_VOLUME_CONFIG_FILE));
             if let Ok(v) = volume_conf {
                 if let Some(n) = v.disabled {
                     disabled = n;
