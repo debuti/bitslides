@@ -39,7 +39,7 @@ pub async fn slide(config: GlobalConfig) -> Result<Token> {
 
     // Analyze each rootset to extract volumes and slides
     for rootset_config in config.rootsets {
-        let some_volumes = rootset_config.identify_env();
+        let some_volumes = rootset_config.into_volumes();
         match some_volumes {
             Ok(v) => volumes.extend(v),
             Err(_) => log::warn!("Error processing some volumes"),

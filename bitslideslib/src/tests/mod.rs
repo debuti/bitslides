@@ -21,7 +21,7 @@ fn test_build_syncjobs() {
             keyword: "slides".into(),
             roots: ctx.roots,
         };
-        rootsetconfig.identify_env().unwrap()
+        rootsetconfig.into_volumes().unwrap()
     };
 
     // Action: Call build_syncjobs operation with the identified volumes
@@ -86,7 +86,7 @@ async fn test_execute_syncjobs() {
             keyword: "slides".into(),
             roots: ctx.roots,
         };
-        rootsetconfig.identify_env().unwrap()
+        rootsetconfig.into_volumes().unwrap()
     };
 
     // Prerequisite: Build the sync jobs between the volumes
@@ -214,7 +214,7 @@ async fn test_execute_syncjobs_with_missing_source() {
             keyword: "slides".into(),
             roots: ctx.roots,
         };
-        rootsetconfig.identify_env().unwrap()
+        rootsetconfig.into_volumes().unwrap()
     };
 
     // Prerequisite: Build the sync jobs between the volumes

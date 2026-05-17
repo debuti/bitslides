@@ -1,7 +1,7 @@
-use crate::config;
+use crate::config::{self, SlideConfig};
 
 use super::slide::Slide;
-use anyhow::Result;
+use anyhow::{bail, Result};
 use std::{collections::HashMap, path::PathBuf};
 
 /// Volume representation.
@@ -35,9 +35,47 @@ impl Volume {
         }
     }
 
-    /// Identify a volume from a path.
+    /// Identify the slides inside a volume.
     ///
-    pub fn from_path(maybe_volume: PathBuf, keyword: &str) -> Option<Self> {
+    /// Mutates the volume by adding the slides found in the slides subfolder.
+    ///
+    fn identify_slides(&mut self) -> Result<()> {
+        let subfolders = self.path.join(&self.keyword).read_dir();
+
+        if subfolders.is_err() {
+            bail!("Unable to read the folder: {self:?}");
+        }
+
+        for entry in subfolders?.flatten() {
+            if let Ok(entry_metadata) = entry.metadata() {
+                if entry_metadata.is_dir() {
+                    let slide_fullpath = entry.path();
+                    let slide_name = slide_fullpath
+                        .file_name()
+                        .unwrap()
+                        .to_string_lossy()
+                        .to_string();
+
+                    // Try to fetch the slide configuration if any
+                    let slide_conf = {
+                        let slide_conf = SlideConfig::new(
+                            slide_fullpath.join(crate::config::DEFAULT_SLIDE_CONFIG_FILE),
+                        );
+                        match slide_conf {
+                            Ok(s) => s.route,
+                            Err(_) => None,
+                        }
+                    };
+
+                    self.add_slide(Slide::new(slide_name, slide_fullpath, slide_conf));
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    fn retrieve_volume(maybe_volume: PathBuf, keyword: &str) -> Option<Self> {
         let slides_path = maybe_volume.join(keyword);
         if slides_path.exists() {
             let mut disabled = false;
@@ -96,6 +134,19 @@ impl Volume {
         None
     }
 
+    /// Identify a volume from a path.
+    ///
+    pub fn from_path(maybe_volume: PathBuf, keyword: &str) -> Option<Self> {
+        let mut volume = Self::retrieve_volume(maybe_volume, keyword)?;
+
+        // Identify the slides of each volume
+        if let Err(e) = volume.identify_slides() {
+            log::warn!("{e}");
+        }
+
+        Some(volume)
+    }
+
     /// Add a slide to the volume.
     ///
     pub fn add_slide(&mut self, slide: Slide) {
@@ -121,5 +172,32 @@ impl std::fmt::Display for Volume {
             write!(f, "\n  - {}", slide)?;
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Volume;
+    use crate::tests::setup;
+
+    /// Test the identification of slides inside a volume
+    #[test]
+    fn test_identify_slides() {
+        // Prerequisite: Setup the test context
+        let ctx = setup().unwrap();
+
+        // Prerequisite: Create a volume object for the "foo" volume
+        let mut volume = Volume::new("foo".to_string(), true, "slides", ctx.roots[0].join("foo"));
+
+        // Action: Call identify_slides operation with the volume object
+        volume.identify_slides().unwrap();
+
+        // Check: The volume should contain 3 slides
+        assert_eq!(volume.slides.len(), 3);
+
+        // Check: The volume should contain the slides "foo", "bar" and "baz"
+        for slide in ["foo", "bar", "baz"] {
+            assert!(volume.slides.contains_key(slide) && volume.slides[slide].path.exists());
+        }
     }
 }
