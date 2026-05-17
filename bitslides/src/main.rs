@@ -1,5 +1,5 @@
 use anyhow::{bail, Result};
-use bitslideslib::{slide, Algorithm, CollisionPolicy, GlobalConfig, RootsetConfig};
+use bitslideslib::{slide, Algorithm, CollisionPolicy, GlobalConfig, Rootset};
 use chrono::prelude::*;
 use config::DEFAULT_KEYWORD;
 use std::path::PathBuf;
@@ -40,11 +40,11 @@ fn generate_trace_path(trace_fmt: &str) -> Option<PathBuf> {
     Some(trace)
 }
 
-/// Processes all configuration files and returns a list of `RootsetConfig` instances.
+/// Processes all configuration files and returns a list of `Rootset` instances.
 ///
 fn process_all_configs(
     config_paths: Vec<&PathBuf>,
-) -> Result<(Vec<RootsetConfig>, Option<PathBuf>)> {
+) -> Result<(Vec<Rootset>, Option<PathBuf>)> {
     let mut success = false;
     let mut rootsets = Vec::new();
     let mut trace = None;
@@ -72,7 +72,7 @@ fn process_all_configs(
                         })
                         .collect::<Vec<PathBuf>>();
 
-                    rootsets.push(RootsetConfig { keyword, roots });
+                    rootsets.push(Rootset { keyword, roots });
 
                     // Yeah, only the trace of the last config file that defines it will prevail
                     // FIXME: Maybe move to the cli?

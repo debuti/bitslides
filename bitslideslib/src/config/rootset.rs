@@ -11,14 +11,14 @@ use crate::volume::Volume;
 /// This configuration is used to define a set of root paths that will contain volumes, along with the keyword each root will use.
 ///
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
-pub struct RootsetConfig {
+pub struct Rootset {
     /// Keyword to use for this rootset
     pub keyword: String,
     /// List of root absolute paths that will contain volumes (Ex. /media or /mnt)
     pub roots: Vec<PathBuf>,
 }
 
-impl RootsetConfig {
+impl Rootset {
     pub fn new(keyword: String, roots: Vec<PathBuf>) -> Self {
         Self { keyword, roots }
     }
@@ -114,7 +114,7 @@ impl RootsetConfig {
 #[cfg(test)]
 mod tests {
 
-    use super::RootsetConfig;
+    use super::Rootset;
     use crate::tests::setup;
     use crate::Volume;
     use std::collections::HashMap;
@@ -126,7 +126,7 @@ mod tests {
         let ctx = setup().unwrap();
 
         // Action: Call identify_volumes operation with the 1st root folder and the keyword "slides"
-        let volumes = RootsetConfig::identify_volumes("slides", &ctx.roots[0]).unwrap();
+        let volumes = Rootset::identify_volumes("slides", &ctx.roots[0]).unwrap();
 
         // Check: The result should contain 2 volumes
         assert_eq!(volumes.len(), 2);
@@ -145,11 +145,11 @@ mod tests {
 
         // Action: Call into_volumes operation with the keyword "slides" and the root folders
         let volumes: HashMap<String, Volume> = {
-            let rootsetconfig = RootsetConfig {
+            let rootset_config = Rootset {
                 keyword: "slides".into(),
                 roots: ctx.roots,
             };
-            rootsetconfig.into_volumes().unwrap()
+            rootset_config.into_volumes().unwrap()
         };
 
         // Check: The result should contain 4 volumes

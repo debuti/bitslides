@@ -2,7 +2,7 @@ mod common;
 
 use crate::CollisionPolicy;
 
-use super::config::{GlobalConfig, RootsetConfig};
+use super::config::{GlobalConfig, Rootset};
 use super::*;
 use checksums::{hash_file, Algorithm};
 use pretty_assertions::assert_eq;
@@ -17,11 +17,11 @@ fn test_build_syncjobs() {
 
     // Prerequisite: Identify the volumes in the root folders
     let mut volumes: HashMap<String, Volume> = {
-        let rootsetconfig = RootsetConfig {
+        let rootset_config = Rootset {
             keyword: "slides".into(),
             roots: ctx.roots,
         };
-        rootsetconfig.into_volumes().unwrap()
+        rootset_config.into_volumes().unwrap()
     };
 
     // Action: Call build_syncjobs operation with the identified volumes
@@ -82,11 +82,11 @@ async fn test_execute_syncjobs() {
 
     // Prerequisite: Identify the volumes in the root folders
     let mut volumes: HashMap<String, Volume> = {
-        let rootsetconfig = RootsetConfig {
+        let rootset_config = Rootset {
             keyword: "slides".into(),
             roots: ctx.roots,
         };
-        rootsetconfig.into_volumes().unwrap()
+        rootset_config.into_volumes().unwrap()
     };
 
     // Prerequisite: Build the sync jobs between the volumes
@@ -210,11 +210,11 @@ async fn test_execute_syncjobs_with_missing_source() {
 
     // Prerequisite: Identify the volumes in the root folders
     let mut volumes: HashMap<String, Volume> = {
-        let rootsetconfig = RootsetConfig {
+        let rootset_config = Rootset {
             keyword: "slides".into(),
             roots: ctx.roots,
         };
-        rootsetconfig.into_volumes().unwrap()
+        rootset_config.into_volumes().unwrap()
     };
 
     // Prerequisite: Build the sync jobs between the volumes
@@ -266,7 +266,7 @@ async fn test_file_monitoring_behavior() {
     // Action: Start the monitoring with slide()
     let token = {
         let config = GlobalConfig {
-            rootsets: vec![RootsetConfig {
+            rootsets: vec![Rootset {
                 keyword: "slides".to_string(),
                 roots: ctx.roots.clone(),
             }],

@@ -21,7 +21,7 @@ mod tracer;
 mod volume;
 mod token;
 
-pub use config::{Algorithm, CollisionPolicy, GlobalConfig, RootsetConfig};
+pub use config::{Algorithm, CollisionPolicy, GlobalConfig, Rootset};
 pub use token::Token;
 
 /// Monitor all the slides.
