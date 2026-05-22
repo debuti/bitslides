@@ -6,13 +6,20 @@ use tokio::{
     fs::OpenOptions,
     io::AsyncWriteExt,
     sync::mpsc::{self, Sender},
-    task::JoinHandle,
 };
+
+#[derive(PartialEq)]
+pub enum Sink<'a> {
+    StdOut,
+    File(&'a PathBuf),
+}
 
 /// Tracer abstraction
 ///
 /// The tracer is a logging utility that asynchronously writes trace messages to a file.
 /// It uses a channel-based approach to avoid blocking the main execution flow when writing logs.
+///
+/// The messages are written on the sending end, using the tracer resources, and sent via a mpsc::channel::<String>
 ///
 pub struct Tracer {
     tx: Option<Sender<String>>,
@@ -20,45 +27,58 @@ pub struct Tracer {
 }
 
 impl Tracer {
-    const CHANNEL_SIZE: usize = 32;
+    pub async fn new<'a>(sinks: &[Sink<'a>]) -> Result<Self> {
+        if sinks.is_empty() {
+            // The user may want to disable tracing by not providing any sink
+            return Ok(Self {
+                tx: None,
+                author: None,
+            });
+        }
 
-    pub async fn new(path: &Option<&PathBuf>) -> Result<(Self, Option<JoinHandle<()>>)> {
-        match path {
-            Some(trace_path) => {
-                let mut file = OpenOptions::new()
+        let (tx, mut rx) = mpsc::channel::<String>(crate::config::TRACE_CHANNEL_CAPACITY);
+
+        let stdout = *&sinks.iter().filter(|x| Sink::StdOut == **x).count() > 0;
+
+        // FIXME: This shit
+        // let files = *&sinks
+        //     .iter()
+        //     .filter(|x| Sink::File == x)
+        //     .map(async |x| OpenOptions::new().create(true).append(true).open(x).await);
+
+        let mut files = if let Sink::File(path) = sinks[1] {
+            vec![
+                OpenOptions::new()
                     .create(true)
                     .append(true)
-                    .open(trace_path)
-                    .await?;
+                    .open(path)
+                    .await?,
+            ]
+        } else {
+            vec![]
+        };
 
-                let (tx, mut rx) = mpsc::channel::<String>(Self::CHANNEL_SIZE);
-
-                let handle = tokio::spawn(async move {
-                    while let Some(msg) = rx.recv().await {
-                        let _ = file.write_all(msg.as_bytes()).await;
-                        let _ = file.write_all(b"\n").await;
-                    }
-                });
-
-                Ok((
-                    Self {
-                        tx: Some(tx),
-                        author: None,
-                    },
-                    Some(handle),
-                ))
+        // Drop the JoinHandle. The async task is now free to die when it finishes its job
+        tokio::spawn(async move {
+            while let Some(msg) = rx.recv().await {
+                if stdout {
+                    println!("{}", msg);
+                }
+                for file in files.iter_mut() {
+                    let _ = file.write_all(msg.as_bytes()).await;
+                    let _ = file.write_all(b"\n").await;
+                }
             }
-            // The user may want to disable tracing by not providing a path
-            None => Ok((
-                Self {
-                    tx: None,
-                    author: None,
-                },
-                None,
-            )),
-        }
+        });
+
+        Ok(Self {
+            tx: Some(tx),
+            author: None,
+        })
     }
 
+    // FIXME: Consider returning a FunctionalTracer meaning that only a Tracer that has been acquired via
+    //        annotate_author can be used for actual tracing
     pub fn annotate_author(&self, author: String) -> Self {
         Self {
             tx: self.tx.clone(),
