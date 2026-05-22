@@ -13,15 +13,17 @@ use std::ffi::CStr;
 
 use tracer::Tracer;
 
-pub mod config;
+mod config;
 mod fs;
+mod rootset;
 mod slide;
 mod syncjob;
+mod token;
 mod tracer;
 mod volume;
-mod token;
 
-pub use config::{Algorithm, CollisionPolicy, GlobalConfig, Rootset};
+pub use config::{Algorithm, CollisionPolicy, GlobalConfig};
+pub use rootset::Rootset;
 pub use token::Token;
 
 /// Monitor all the slides.
@@ -90,7 +92,6 @@ pub async fn tidy_up() {
      */
 }
 
-
 /// Compose the sync jobs from the volume information.
 ///
 /// This function will create the sync jobs based on the identified slides.
@@ -151,7 +152,8 @@ fn build_syncjobs(volumes: &mut HashMap<String, Volume>) -> Result<SyncJobs> {
 
 /// Execute the sync jobs.
 ///
-/// This function will execute the sync jobs, ideally, in parallel.
+/// This function will execute the sync jobs, ideally, in parallel. It uses a watcher to get notified
+/// of filesystem events and trigger the relevant syncjob
 ///
 async fn execute_syncjobs(
     volumes: &HashMap<String, Volume>,
@@ -177,6 +179,7 @@ async fn execute_syncjobs(
         let tracer = tracer.annotate_author("Watcher".to_string());
         tracer.async_log("Init", "Starting slides sync...").await?;
 
+        // FIXME: To NOT overflow the event queue, push the event to another async task that does this management
         notify::recommended_watcher(
             move |res: std::result::Result<notify::Event, notify::Error>| {
                 if let Ok(event) = res {
@@ -198,6 +201,7 @@ async fn execute_syncjobs(
                                             if trigger.capacity() > 0 {
                                                 let _deleteme =
                                                     tracer.sync_log("Event", "launched");
+                                                // Blocking send because we are doing this from sync code
                                                 let _ = trigger.blocking_send(());
                                             }
                                             // Otherwise skip this event, its ok

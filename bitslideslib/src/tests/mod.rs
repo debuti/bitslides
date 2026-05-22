@@ -2,7 +2,7 @@ mod common;
 
 use crate::CollisionPolicy;
 
-use super::config::{GlobalConfig, Rootset};
+use super::config::GlobalConfig;
 use super::*;
 use checksums::{hash_file, Algorithm};
 use pretty_assertions::assert_eq;

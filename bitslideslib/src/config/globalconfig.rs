@@ -1,5 +1,5 @@
 use super::CollisionPolicy;
-use super::Rootset;
+use crate::Rootset;
 use std::path::PathBuf;
 
 pub use checksums::Algorithm;
