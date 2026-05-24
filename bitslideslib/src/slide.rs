@@ -17,7 +17,7 @@ pub struct Slide {
 impl Slide {
     /// Create a new slide.
     ///
-    pub fn new(name: String, path: PathBuf, or_else: Option<String>) -> Self {
+    pub const fn new(name: String, path: PathBuf, or_else: Option<String>) -> Self {
         Self {
             name,
             path,

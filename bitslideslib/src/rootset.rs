@@ -19,7 +19,8 @@ pub struct Rootset {
 }
 
 impl Rootset {
-    pub fn new(keyword: String, roots: Vec<PathBuf>) -> Self {
+    #[must_use]
+    pub const fn new(keyword: String, roots: Vec<PathBuf>) -> Self {
         Self { keyword, roots }
     }
 
@@ -100,7 +101,7 @@ impl Rootset {
             let file_type = entry.file_type();
             if let Ok(file_type) = file_type {
                 if file_type.is_dir() {
-                    if let Some(volume) = Volume::from_path(entry.path(), keyword) {
+                    if let Some(volume) = Volume::from_path(&entry.path(), keyword) {
                         volumes.insert(volume.name.clone(), volume);
                     }
                 }

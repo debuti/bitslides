@@ -3,12 +3,12 @@ use std::path::PathBuf;
 use anyhow::{bail, Result};
 use chrono::Local;
 use tokio::{
-    fs::OpenOptions,
+    fs::{File, OpenOptions},
     io::AsyncWriteExt,
     sync::mpsc::{self, Sender},
 };
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Eq)]
 pub enum Sink<'a> {
     StdOut,
     File(&'a PathBuf),
@@ -19,7 +19,7 @@ pub enum Sink<'a> {
 /// The tracer is a logging utility that asynchronously writes trace messages to a file.
 /// It uses a channel-based approach to avoid blocking the main execution flow when writing logs.
 ///
-/// The messages are written on the sending end, using the tracer resources, and sent via a mpsc::channel::<String>
+/// The messages are written on the sending end, using the tracer resources, and sent via a [`mpsc::channel::<String>`].
 ///
 pub struct Tracer {
     tx: Option<Sender<String>>,
@@ -27,7 +27,7 @@ pub struct Tracer {
 }
 
 impl Tracer {
-    pub async fn new<'a>(sinks: &[Sink<'a>]) -> Result<Self> {
+    pub async fn new(sinks: &[Sink<'_>]) -> Result<Self> {
         if sinks.is_empty() {
             // The user may want to disable tracing by not providing any sink
             return Ok(Self {
@@ -38,33 +38,33 @@ impl Tracer {
 
         let (tx, mut rx) = mpsc::channel::<String>(crate::config::TRACE_CHANNEL_CAPACITY);
 
-        let stdout = *&sinks.iter().filter(|x| Sink::StdOut == **x).count() > 0;
+        let stdout = sinks.iter().filter(|x| Sink::StdOut == **x).count() > 0;
 
-        // FIXME: This shit
-        // let files = *&sinks
-        //     .iter()
-        //     .filter(|x| Sink::File == x)
-        //     .map(async |x| OpenOptions::new().create(true).append(true).open(x).await);
+        let mut files = {
+            let mut result: Vec<File> = Vec::new();
 
-        let mut files = if let Sink::File(path) = sinks[1] {
-            vec![
-                OpenOptions::new()
-                    .create(true)
-                    .append(true)
-                    .open(path)
-                    .await?,
-            ]
-        } else {
-            vec![]
+            for sink in sinks {
+                if let Sink::File(path) = sink {
+                    result.push(
+                        OpenOptions::new()
+                            .create(true)
+                            .append(true)
+                            .open(path)
+                            .await?,
+                    );
+                }
+            }
+
+            result
         };
 
         // Drop the JoinHandle. The async task is now free to die when it finishes its job
         tokio::spawn(async move {
             while let Some(msg) = rx.recv().await {
                 if stdout {
-                    println!("{}", msg);
+                    println!("{msg}");
                 }
-                for file in files.iter_mut() {
+                for file in &mut files {
                     let _ = file.write_all(msg.as_bytes()).await;
                     let _ = file.write_all(b"\n").await;
                 }
@@ -87,9 +87,7 @@ impl Tracer {
     }
 
     fn compose_log_message(&self, operation: &str, details: &str) -> Result<String> {
-        let author = if let Some(author) = &self.author {
-            author
-        } else {
+        let Some(author) = &self.author else {
             bail!("Tracer author not set")
         };
         Ok(format!(

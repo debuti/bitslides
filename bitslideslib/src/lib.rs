@@ -1,12 +1,24 @@
-use anyhow::{bail, Result};
+#![warn(clippy::pedantic)]
+#![warn(clippy::nursery)]
+#![warn(clippy::unwrap_used)]
+#![warn(clippy::expect_used)]
+#![warn(clippy::indexing_slicing)]
+#![warn(clippy::panic)]
+#![warn(clippy::todo)]
+#![warn(clippy::unimplemented)]
+
+use anyhow::{anyhow, bail, Result};
 use fs::MoveStrategy;
-use notify::{Event, EventKind, RecursiveMode};
+use notify::{Event, EventKind, RecursiveMode, Watcher};
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
 };
 use syncjob::{SyncJob, SyncJobs};
-use tokio::sync::mpsc;
+use tokio::{
+    select,
+    sync::{mpsc, oneshot},
+};
 use volume::Volume;
 
 #[cfg(target_os = "windows")]
@@ -37,68 +49,109 @@ pub async fn slide(config: GlobalConfig) -> Result<Token> {
 
     let tracer = {
         let mut sinks = vec![tracer::Sink::StdOut];
-        if config.trace.is_some() {
-            sinks.push(tracer::Sink::File(config.trace.as_ref().unwrap()));
-        }
+        sinks.extend(config.trace.iter().map(tracer::Sink::File));
         Tracer::new(&sinks).await?
     };
 
-    // Core mpsc channel
-    let (tx, mut rx) = mpsc::channel::<Event>(config::CORE_CHANNEL_CAPACITY);
+    // Core mpsc channels
+    let (cancellation_tx, mut cancellation_rx) = oneshot::channel::<()>();
+    let (event_tx, mut event_rx) = mpsc::channel::<Event>(config::EVENT_CHANNEL_CAPACITY);
+    let (command_tx, mut command_rx) = mpsc::channel::<String>(config::COMMAND_CHANNEL_CAPACITY);
 
-    //
-    let watcher = {
-        let tracer = tracer.annotate_author("Watcher".to_string());
-        let _ = tracer.sync_log("Init", "Starting slides sync...");
+    // Async watcher
+    {
+        // Watcher (only one instance for all watched pathss)
+        let mut watcher = {
+            let tracer = tracer.annotate_author("SyncWatcher".to_string());
+            let _ = tracer.sync_log("Init", "Starting slides sync...");
 
-        notify::recommended_watcher(
-            move |res: std::result::Result<notify::Event, notify::Error>| {
-                if let Ok(event) = res {
-                    match event.kind {
-                        EventKind::Modify(_) | EventKind::Create(_) | EventKind::Remove(_) => {
-                            let _ = tracer
-                                .sync_log("Event", &format!("Filesystem event: {:?} ", event));
+            notify::recommended_watcher(
+                move |res: std::result::Result<notify::Event, notify::Error>| {
+                    if let Ok(event) = res {
+                        match event.kind {
+                            EventKind::Modify(_) | EventKind::Create(_) | EventKind::Remove(_) => {
+                                let _ = tracer
+                                    .sync_log("Event", &format!("Filesystem event: {event:?} "));
 
-                            if tx.capacity() > 0 {
-                                let _ = tracer.sync_log("Event", "launched");
-                                // Blocking send because we are doing this from sync code
-                                let _ = tx.blocking_send(event);
-                            } else {
-                                let _ = tracer.sync_log("Event", "ignored");
+                                if event_tx.capacity() > 0 {
+                                    let _ = tracer.sync_log("Event", "launched");
+                                    // Blocking send because we are doing this from sync code
+                                    let _ = event_tx.blocking_send(event);
+                                } else {
+                                    let _ = tracer.sync_log("Event", "ignored");
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                },
+            )?
+        };
+        {
+            let tracer = tracer.annotate_author("AsyncWatcher".to_string());
+            tokio::spawn(
+                // FIXME: Move this async task to a separate function and file if it grows more
+                async move {
+                    loop {
+                        select! {
+                            command = command_rx.recv() => {
+                               let _ = tracer.async_log("Command", &format!("Working on {command:?}...")).await;
+                               if let Some(command) = command {
+                                   if command.starts_with("watchr ") {
+                                       let path_str = command.strip_prefix("watchr ").unwrap();
+                                       let path = PathBuf::from(path_str);
+                                       if let Err(e) = watcher.watch(&path, RecursiveMode::Recursive) {
+                                           let _ = tracer.async_log("Error", &format!("Failed to watch {path:?}: {e:?}")).await;
+                                       } else {
+                                           let _ = tracer.async_log("Command", &format!("Watching {path:?}...")).await;
+                                       }
+                                   }
+                                   else {
+                                       let _ = tracer.async_log("Command", &format!("Unknown command: {command:?}")).await;
+                                   }
+                               } else {
+                                    break;
+                               }
+                            }
+                            _ = &mut cancellation_rx => {
+                                let _= tracer.async_log("Shutdown", "Shutdown signal received, performing cleanup...").await;
+                                break;
                             }
                         }
-                        _ => {}
                     }
-                }
-            },
-        )?
-    };
+                },
+            );
+        }
+    }
 
     // Core creation
     {
         let tracer = tracer.annotate_author("Core".to_string());
 
-        // Drop the JoinHandle. The async task is now free to die when it finishes its job
         tokio::spawn(async move {
             // Core initialization
             // FIXME: Delete this async_log
             tracer.async_log("Init", "I am alive").await?;
 
-            let mut volumes = HashMap::new();
+            let mut volumes = {
+                let mut result = HashMap::new();
 
-            // Analyze each rootset to extract volumes and slides
-            for rootset_config in config.rootsets {
-                let some_volumes = rootset_config.into_volumes();
-                match some_volumes {
-                    Ok(v) => volumes.extend(v),
-                    Err(_) => log::warn!("Error processing some volumes"),
+                // Analyze each rootset to extract volumes and slides
+                for rootset_config in config.rootsets {
+                    let some_volumes = rootset_config.into_volumes();
+                    let Ok(v) = some_volumes else {
+                        log::warn!("Error processing some volumes");
+                        continue;
+                    };
+                    result.extend(v);
                 }
-            }
 
-            log::debug!("Volumes for all configs: {volumes:#?}");
+                log::debug!("Volumes for all configs: {result:#?}");
+                result
+            };
 
             // Now analyze the volumes to generate the sync jobs
-            let syncjobs = build_syncjobs(&mut volumes)?;
+            let mut syncjobs = build_syncjobs(&mut volumes)?;
 
             log::debug!("Sync jobs: {syncjobs:#?}");
 
@@ -109,39 +162,80 @@ pub async fn slide(config: GlobalConfig) -> Result<Token> {
                 retries: 5,
             };
 
-            execute_syncjobs(&volumes, syncjobs, config.dry_run, tracer, &move_req).await?;
+            let watcher_db = {
+                let mut watcher_db = Vec::new();
+                for syncjob in &mut syncjobs {
+                    let path = volumes[&syncjob.src].slides[&syncjob.dst]
+                        .path
+                        .canonicalize()?;
+
+                    let Some(trigger) = syncjob.take_trigger() else {
+                        bail!("No trigger found for sync job {syncjob:?}");
+                    };
+
+                    watcher_db.push((path, trigger));
+                }
+                watcher_db
+            };
+
+            for mut syncjob in syncjobs {
+                log::debug!("Syncing {:?}", syncjob);
+                let src = volumes[&syncjob.src].slides[&syncjob.dst].path.clone();
+                let dst = volumes[&syncjob.via].slides[&syncjob.dst].path.clone();
+                let trace = tracer.annotate_author(format!("{syncjob:?}"));
+                let move_req = move_req.clone();
+
+                command_tx.send(format!("watchr {}", src.display())).await?;
+
+                // Spawn a new tokio async task for this syncjob
+                // Drop the JoinHandle. The async task is now free to die when it finishes its job
+                tokio::spawn(async move {
+                    loop {
+                        if let Err(e) =
+                            sync_slide(&syncjob, &src, &dst, config.dry_run, &trace, &move_req)
+                                .await
+                        {
+                            bail!("Error syncing {:?} -> {:?}: {:?}", src, dst, e);
+                        }
+                        // FIXME: Maybe use tokio::sync::notify here instead!
+                        // None is received when the mpsc::Sender is dropped
+                        if syncjob.borrow_receiver().recv().await.is_none() {
+                            return Ok(());
+                        }
+                    }
+                });
+            }
 
             // Core main loop
-            while let Some(event) = rx.recv().await {
+            while let Some(event) = event_rx.recv().await {
                 match event.kind {
                     EventKind::Modify(_) | EventKind::Create(_) | EventKind::Remove(_) => {
                         //TODO: See if the path is rootsets
                         //TODO: See if the path is slides
                         //TODO: See if the path is syncjobs
 
-                        // for (path, trigger) in &watcher_db {
-                        //     // Check if any event path is within the watched directory
-                        //     for event_path in &event.paths {
-                        //         let event_path = event_path.canonicalize();
-                        //         if let Ok(event_path) = event_path {
-                        //             let _deleteme = tracer.sync_log(
-                        //                 "Event",
-                        //                 &format!("launching {}", event_path.display()),
-                        //             );
-                        //             // FIXME: Maybe this doesnt work
-                        //             if event_path.starts_with(path) {
-                        //                 if trigger.capacity() > 0 {
-                        //                     let _deleteme =
-                        //                         tracer.sync_log("Event", "launched");
-                        //                     // Blocking send because we are doing this from sync code
-                        //                     let _ = trigger.blocking_send(());
-                        //                 }
-                        //                 // Otherwise skip this event, its ok
-                        //                 break;
-                        //             }
-                        //         }
-                        //     }
-                        // }
+                        for (path, trigger) in &watcher_db {
+                            // Check if any event path is within the watched directory
+                            for event_path in &event.paths {
+                                let event_path = event_path.canonicalize();
+                                if let Ok(event_path) = event_path {
+                                    let _deleteme = tracer.sync_log(
+                                        "Event",
+                                        &format!("launching {}", event_path.display()),
+                                    );
+                                    // FIXME: Maybe this doesnt work
+                                    if event_path.starts_with(path) {
+                                        if trigger.capacity() > 0 {
+                                            let _deleteme = tracer.sync_log("Event", "launched");
+                                            // Blocking send because we are doing this from sync code
+                                            let _ = trigger.blocking_send(());
+                                        }
+                                        // Otherwise skip this event, its ok
+                                        break;
+                                    }
+                                }
+                            }
+                        }
                     }
                     _ => {}
                 }
@@ -151,7 +245,7 @@ pub async fn slide(config: GlobalConfig) -> Result<Token> {
         });
     }
 
-    Ok(Token::new(watcher))
+    Ok(Token::new(cancellation_tx))
 }
 
 /// Tidy up the volumes.
@@ -228,74 +322,12 @@ fn build_syncjobs(volumes: &mut HashMap<String, Volume>) -> Result<SyncJobs> {
         if !volumes[&syncjob.via].slides.contains_key(&syncjob.dst) {
             volumes
                 .get_mut(&syncjob.via)
-                .unwrap()
+                .ok_or_else(|| anyhow!("Volume not found"))?
                 .create_slide(&syncjob.dst)?;
         }
     }
 
     Ok(syncjobs)
-}
-
-/// Execute the sync jobs.
-///
-/// This function will execute the sync jobs, ideally, in parallel. It uses a watcher to get notified
-/// of filesystem events and trigger the relevant syncjob
-///
-async fn execute_syncjobs(
-    volumes: &HashMap<String, Volume>,
-    mut syncjobs: SyncJobs,
-    dry_run: bool,
-    tracer: Tracer,
-    move_req: &MoveStrategy,
-) -> Result<()> {
-    let mut watcher_db = Vec::new();
-    for syncjob in syncjobs.iter_mut() {
-        let path = volumes[&syncjob.src].slides[&syncjob.dst]
-            .path
-            .canonicalize()?;
-        let trigger = if let Some(trigger) = syncjob.take_trigger() {
-            trigger
-        } else {
-            bail!("No trigger found for sync job {:?}", syncjob);
-        };
-        watcher_db.push((path, trigger));
-    }
-
-    // TODO: Measure the next block
-    {
-        let mut handles = Vec::new();
-
-        for mut syncjob in syncjobs.into_iter() {
-            log::debug!("Syncing {:?}", syncjob);
-            let src = volumes[&syncjob.src].slides[&syncjob.dst].path.clone();
-            let dst = volumes[&syncjob.via].slides[&syncjob.dst].path.clone();
-            let mut trace = tracer.annotate_author(format!("{:?}", syncjob));
-            let move_req = move_req.clone();
-
-            
-            // watcher.watch(&src, RecursiveMode::Recursive)?;
-
-            // Spawn a new tokio async task for this syncjob
-            let handle = tokio::spawn(async move {
-                loop {
-                    if let Err(e) =
-                        sync_slide(&syncjob, &src, &dst, dry_run, &mut trace, &move_req).await
-                    {
-                        bail!("Error syncing {:?} -> {:?}: {:?}", src, dst, e);
-                    }
-                    // FIXME: Maybe use tokio::sync::notify here instead!
-                    // None is received when the mpsc::Sender is dropped
-                    if syncjob.borrow_receiver().recv().await.is_none() {
-                        return Ok(());
-                    }
-                }
-            });
-            handles.push(handle);
-        }
-    }
-
-    Ok(())
-    // The anonymous tracer will be dropped here
 }
 
 /// Sync the contents of a slide.
@@ -305,7 +337,7 @@ async fn sync_slide(
     src: &PathBuf,
     dst: &Path,
     dry_run: bool,
-    tracer: &mut Tracer,
+    tracer: &Tracer,
     move_req: &MoveStrategy,
 ) -> Result<()> {
     log::info!("Syncing {:?}", syncjob);

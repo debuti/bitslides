@@ -75,7 +75,7 @@ impl Volume {
         Ok(())
     }
 
-    fn retrieve_volume(maybe_volume: PathBuf, keyword: &str) -> Option<Self> {
+    fn retrieve_volume(maybe_volume: &PathBuf, keyword: &str) -> Option<Self> {
         let slides_path = maybe_volume.join(keyword);
         if slides_path.exists() {
             let mut disabled = false;
@@ -136,8 +136,8 @@ impl Volume {
 
     /// Identify a volume from a path.
     ///
-    pub fn from_path(maybe_volume: PathBuf, keyword: &str) -> Option<Self> {
-        let mut volume = Self::retrieve_volume(maybe_volume, keyword)?;
+    pub fn from_path(maybe_volume: &PathBuf, keyword: &str) -> Option<Self> {
+        let mut volume = Self::retrieve_volume(&maybe_volume, keyword)?;
 
         // Identify the slides of each volume
         if let Err(e) = volume.identify_slides() {

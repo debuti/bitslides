@@ -6,6 +6,7 @@
 2. Fix error message quality
 3. Implement proper types for SyncJobs (remove FIXME)
 4. Make collision/check policies configurable
+5. SBOM (cargo sbom)
 
 ### High Priority:
 5. ✅ Create a workspace where you have 1 lib and 1 bin

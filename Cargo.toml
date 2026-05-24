@@ -3,14 +3,14 @@ members = ["bitslides", "bitslideslib"]
 resolver = "2"
 
 [workspace.package]
-version = "0.1.2"
+version = "0.2.0"
 edition = "2021"
 authors = ["Borja García <debuti@gmail.com>"]
 repository = "https://github.com/debuti/bitslides"
 license = "GPL-3.0-only"
 
 [workspace.dependencies]
-bitslideslib = { path = "bitslideslib", version = "0.1.2" }
+bitslideslib = { path = "bitslideslib" }
 # MIT OR Apache-2.0
 anyhow = "1.0"
 chrono = "0.4"
