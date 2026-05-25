@@ -13,7 +13,7 @@ categories = ["command-line-utilities", "file-system", "synchronization"]
 readme = "README.md"
 
 [workspace.dependencies]
-bitslideslib = { path = "bitslideslib" }
+bitslideslib = { version = "0.2.0", path = "bitslideslib" }
 # MIT OR Apache-2.0
 anyhow = "1.0"
 chrono = "0.4"
