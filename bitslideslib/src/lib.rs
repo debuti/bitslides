@@ -163,9 +163,9 @@ pub async fn slide(config: GlobalConfig) -> Result<Token> {
 
             let move_req = MoveStrategy {
                 collision: config.collision,
-                safe: false,
+                safe: config.safe,
                 check: config.check,
-                retries: 5,
+                retries: config.retries,
             };
 
             let watcher_db = {
