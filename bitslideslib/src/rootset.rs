@@ -61,7 +61,7 @@ impl Rootset {
                 }
                 let mut ptr = 0;
                 while ptr < length {
-                    let drive = CStr::from_bytes_until_nul(&buf[ptr..]).unwrap();
+                    let drive = std::ffi::CStr::from_bytes_until_nul(&buf[ptr..]).unwrap();
                     let offset_to_next = 1 + drive.count_bytes();
                     ptr += offset_to_next;
                     result.push(PathBuf::from(drive.to_str().unwrap()));
@@ -70,7 +70,7 @@ impl Rootset {
             };
 
             for drive in drives {
-                if let Some(volume) = Volume::from_path(drive, keyword) {
+                if let Some(volume) = Volume::from_path(&drive, &self.keyword) {
                     volumes.insert(volume.name.clone(), volume);
                 }
             }

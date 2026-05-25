@@ -26,9 +26,6 @@ use tokio::{
 };
 use volume::Volume;
 
-#[cfg(target_os = "windows")]
-use std::ffi::CStr;
-
 use tracer::Tracer;
 
 mod config;
