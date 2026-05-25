@@ -74,9 +74,9 @@ end note
 note right of CancellationQ
     The user sends a cancellation signal to the AsyncWatcher, which then gracefully shuts
     down the SyncWatcher. When this happens the EventQ is closed, which causes the Core to
-    stop consuming events and exit. After Core exits, all the SyncJob queues are also closed
-    and also are the SyncJobs. Finally, since no tx is still alive, the TracerQ is closed
-    and so is the Tracer.
+    stop consuming events and exit. After Core exits, all the SyncJob queues are also closed,
+    which causes the SyncJobs to exit. Finally, since no tx is still alive, the TracerQ is
+    closed and so is the Tracer.
 end note
 
 @enduml
