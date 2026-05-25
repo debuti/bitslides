@@ -87,11 +87,13 @@ jobs:
         with:
           toolchain: stable
 
-      - name: Install Tarpaulin
-        run: cargo install cargo-tarpaulin
+      - name: Install coverage tools
+        run: |
+          cargo install cargo-llvm-cov --locked
+          rustup component add llvm-tools-preview
 
       - name: Run coverage
-        run: cargo tarpaulin --out Xml --fail-under 90
+        run: cargo llvm-cov --cobertura --fail-under-lines 90 --output-path cobertura.xml
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
