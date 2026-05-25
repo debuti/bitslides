@@ -68,7 +68,8 @@ async fn delete_empty_folders(root: &Path) -> Result<()> {
         'main: while !stack.is_empty() {
             let mut is_empty = true;
 
-            let current = stack.pop().unwrap();
+            #[allow(clippy::expect_used)]
+            let current = stack.pop().expect("Stack empty. Development error.");
 
             // Read the directory
             if let Ok(mut read_dir) = tokio::fs::read_dir(&current).await {
@@ -148,7 +149,9 @@ pub async fn sync<U: AsRef<Path>, V: AsRef<Path>>(
         // Check if the destination exists, otherwise create it
         if std::fs::metadata(&dst).is_err() {
             log::info!("Mkdir: {:?}", dst);
-            tracer.async_log("MKDIR", &format!("{:?}", &dst)).await?;
+            tracer
+                .async_log("MKDIR", &format!("{}", &dst.display()))
+                .await?;
 
             if !dry_run {
                 std::fs::create_dir_all(&dst)?;
@@ -171,7 +174,7 @@ pub async fn sync<U: AsRef<Path>, V: AsRef<Path>>(
                 Some(filename) => {
                     log::info!("Move: {:?} -> {:?}", &src, &dst);
                     tracer
-                        .async_log("MV", &format!("{:?} -> {:?}", &src, &dst))
+                        .async_log("MV", &format!("{} -> {}", &src.display(), &dst.display()))
                         .await?;
 
                     let dst = dst.join(filename);

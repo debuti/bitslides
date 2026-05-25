@@ -44,6 +44,15 @@ pub use token::Token;
 /// This function will take the input `config`, identify the volumes and slides,
 /// and execute the sync jobs. Returns a Result indicating success or failure.
 ///
+/// # Errors
+///
+/// This function will return an error if any of the operations fail, such as reading directories, syncing slides, etc.
+///
+/// # Panics
+///
+/// This function will panic on developer errors, such as invalid command formats.
+///
+#[allow(clippy::too_many_lines)]
 pub async fn slide(config: GlobalConfig) -> Result<Token> {
     log::debug!("Config: {config:#?}");
 
@@ -63,7 +72,7 @@ pub async fn slide(config: GlobalConfig) -> Result<Token> {
         // Watcher (only one instance for all watched pathss)
         let mut watcher = {
             let tracer = tracer.annotate_author("SyncWatcher".to_string());
-            let _ = tracer.sync_log("Init", "Starting slides sync...");
+            let _ = tracer.async_log("Init", "Starting slides sync...").await;
 
             notify::recommended_watcher(
                 move |res: std::result::Result<notify::Event, notify::Error>| {
@@ -98,12 +107,13 @@ pub async fn slide(config: GlobalConfig) -> Result<Token> {
                                let _ = tracer.async_log("Command", &format!("Working on {command:?}...")).await;
                                if let Some(command) = command {
                                    if command.starts_with("watchr ") {
-                                       let path_str = command.strip_prefix("watchr ").unwrap();
+                                       #[allow(clippy::expect_used)]
+                                       let path_str = command.strip_prefix("watchr ").expect("Invalid command format");
                                        let path = PathBuf::from(path_str);
                                        if let Err(e) = watcher.watch(&path, RecursiveMode::Recursive) {
-                                           let _ = tracer.async_log("Error", &format!("Failed to watch {path:?}: {e:?}")).await;
+                                           let _ = tracer.async_log("Error", &format!("Failed to watch {}: {:?}", path.display(), e)).await;
                                        } else {
-                                           let _ = tracer.async_log("Command", &format!("Watching {path:?}...")).await;
+                                           let _ = tracer.async_log("Command", &format!("Watching {}...", path.display())).await;
                                        }
                                    }
                                    else {
@@ -130,8 +140,6 @@ pub async fn slide(config: GlobalConfig) -> Result<Token> {
 
         tokio::spawn(async move {
             // Core initialization
-            // FIXME: Delete this async_log
-            tracer.async_log("Init", "I am alive").await?;
 
             let mut volumes = {
                 let mut result = HashMap::new();
@@ -139,11 +147,7 @@ pub async fn slide(config: GlobalConfig) -> Result<Token> {
                 // Analyze each rootset to extract volumes and slides
                 for rootset_config in config.rootsets {
                     let some_volumes = rootset_config.into_volumes();
-                    let Ok(v) = some_volumes else {
-                        log::warn!("Error processing some volumes");
-                        continue;
-                    };
-                    result.extend(v);
+                    result.extend(some_volumes);
                 }
 
                 log::debug!("Volumes for all configs: {result:#?}");
@@ -165,9 +169,11 @@ pub async fn slide(config: GlobalConfig) -> Result<Token> {
             let watcher_db = {
                 let mut watcher_db = Vec::new();
                 for syncjob in &mut syncjobs {
-                    let path = volumes[&syncjob.src].slides[&syncjob.dst]
-                        .path
-                        .canonicalize()?;
+                    let path = volumes
+                        .get(&syncjob.src)
+                        .and_then(|v| v.slides.get(&syncjob.dst))
+                        .map(|s| s.path.canonicalize())
+                        .ok_or_else(|| anyhow!("Invalid sync job paths: {:?}", syncjob))??;
 
                     let Some(trigger) = syncjob.take_trigger() else {
                         bail!("No trigger found for sync job {syncjob:?}");
@@ -180,8 +186,16 @@ pub async fn slide(config: GlobalConfig) -> Result<Token> {
 
             for mut syncjob in syncjobs {
                 log::debug!("Syncing {:?}", syncjob);
-                let src = volumes[&syncjob.src].slides[&syncjob.dst].path.clone();
-                let dst = volumes[&syncjob.via].slides[&syncjob.dst].path.clone();
+                let src = volumes
+                    .get(&syncjob.src)
+                    .and_then(|v| v.slides.get(&syncjob.dst))
+                    .map(|s| s.path.clone())
+                    .ok_or_else(|| anyhow!("Invalid sync job paths: {:?}", syncjob))?;
+                let dst = volumes
+                    .get(&syncjob.via)
+                    .and_then(|v| v.slides.get(&syncjob.dst))
+                    .map(|s| s.path.clone())
+                    .ok_or_else(|| anyhow!("Invalid sync job paths: {:?}", syncjob))?;
                 let trace = tracer.annotate_author(format!("{syncjob:?}"));
                 let move_req = move_req.clone();
 
@@ -207,31 +221,31 @@ pub async fn slide(config: GlobalConfig) -> Result<Token> {
             }
 
             // Core main loop
-            while let Some(event) = event_rx.recv().await {
+            'event_loop: while let Some(event) = event_rx.recv().await {
                 match event.kind {
                     EventKind::Modify(_) | EventKind::Create(_) | EventKind::Remove(_) => {
                         //TODO: See if the path is rootsets
                         //TODO: See if the path is slides
-                        //TODO: See if the path is syncjobs
 
+                        // See if the path is syncjobs
                         for (path, trigger) in &watcher_db {
                             // Check if any event path is within the watched directory
                             for event_path in &event.paths {
                                 let event_path = event_path.canonicalize();
                                 if let Ok(event_path) = event_path {
-                                    let _deleteme = tracer.sync_log(
-                                        "Event",
-                                        &format!("launching {}", event_path.display()),
-                                    );
-                                    // FIXME: Maybe this doesnt work
                                     if event_path.starts_with(path) {
+                                        let _ = tracer
+                                            .async_log(
+                                                "Event",
+                                                &format!("launching {}", event_path.display()),
+                                            )
+                                            .await;
                                         if trigger.capacity() > 0 {
-                                            let _deleteme = tracer.sync_log("Event", "launched");
-                                            // Blocking send because we are doing this from sync code
-                                            let _ = trigger.blocking_send(());
+                                            let _ = trigger.send(()).await;
+                                            continue 'event_loop;
                                         }
-                                        // Otherwise skip this event, its ok
-                                        break;
+                                        let _ = tracer.async_log("Event", "skipped!").await;
+                                        continue 'event_loop;
                                     }
                                 }
                             }
@@ -248,29 +262,29 @@ pub async fn slide(config: GlobalConfig) -> Result<Token> {
     Ok(Token::new(cancellation_tx))
 }
 
-/// Tidy up the volumes.
-///
-/// This function traverses the slides of each volume and applies the rules defined in the .slide.yml file.
-///
-pub async fn tidy_up() {
-    unimplemented!();
-    /*
-     * TODO: Execute the tidy-up function
-     * 1. Read a .slide.yml file in foo/slides/foo folder
-     * 2. That file should have this structure
-     *  - rules:
-     *    - rule:
-     *      - regex: "^Media"
-     *      - operation: Move
-     *      - destination: "Media/Inbox" # Relative to volume root (mkdir -p if not existing)
-     *    - rule:
-     *      - regex: "^Photos/Mobile"
-     *      - operation: Move_to_new_dir
-     *      - params:
-     *        - 0: "%Y%M%D"
-     *      - destination: "Media/Photos"
-     */
-}
+// /// Tidy up the volumes.
+// ///
+// /// This function traverses the slides of each volume and applies the rules defined in the .slide.yml file.
+// ///
+// pub async fn tidy_up() {
+//     unimplemented!();
+//     /*
+//      * TODO: Execute the tidy-up function
+//      * 1. Read a .slide.yml file in foo/slides/foo folder
+//      * 2. That file should have this structure
+//      *  - rules:
+//      *    - rule:
+//      *      - regex: "^Media"
+//      *      - operation: Move
+//      *      - destination: "Media/Inbox" # Relative to volume root (mkdir -p if not existing)
+//      *    - rule:
+//      *      - regex: "^Photos/Mobile"
+//      *      - operation: Move_to_new_dir
+//      *      - params:
+//      *        - 0: "%Y%M%D"
+//      *      - destination: "Media/Photos"
+//      */
+// }
 
 /// Compose the sync jobs from the volume information.
 ///

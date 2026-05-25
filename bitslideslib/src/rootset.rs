@@ -28,8 +28,10 @@ impl Rootset {
     ///
     /// This function will identify the volumes and slides for each volume in the current system.
     ///
-    /// Returns a `Result` with a `HashMap` of `Volumes` indexed by their name
-    pub fn into_volumes(self) -> Result<HashMap<String, Volume>> {
+    /// Returns a `HashMap` of `Volumes` indexed by their name
+    ///
+    #[must_use]
+    pub fn into_volumes(self) -> HashMap<String, Volume> {
         let mut volumes: HashMap<String, Volume> = HashMap::new();
 
         // Identify the volumes in each root
@@ -74,7 +76,7 @@ impl Rootset {
             }
         }
 
-        Ok(volumes)
+        volumes
     }
 
     /// Identify volumes inside a each root folder.
@@ -150,7 +152,7 @@ mod tests {
                 keyword: "slides".into(),
                 roots: ctx.roots,
             };
-            rootset_config.into_volumes().unwrap()
+            rootset_config.into_volumes()
         };
 
         // Check: The result should contain 4 volumes

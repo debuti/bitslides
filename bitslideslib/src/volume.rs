@@ -1,7 +1,7 @@
 use crate::config::{self, SlideConfig};
 
 use super::slide::Slide;
-use anyhow::{bail, Result};
+use anyhow::{anyhow, bail, Result};
 use std::{collections::HashMap, path::PathBuf};
 
 /// Volume representation.
@@ -52,7 +52,7 @@ impl Volume {
                     let slide_fullpath = entry.path();
                     let slide_name = slide_fullpath
                         .file_name()
-                        .unwrap()
+                        .ok_or_else(|| anyhow!("Invalid slide path: {:?}", slide_fullpath))?
                         .to_string_lossy()
                         .to_string();
 
@@ -137,7 +137,7 @@ impl Volume {
     /// Identify a volume from a path.
     ///
     pub fn from_path(maybe_volume: &PathBuf, keyword: &str) -> Option<Self> {
-        let mut volume = Self::retrieve_volume(&maybe_volume, keyword)?;
+        let mut volume = Self::retrieve_volume(maybe_volume, keyword)?;
 
         // Identify the slides of each volume
         if let Err(e) = volume.identify_slides() {
