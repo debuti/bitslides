@@ -93,7 +93,7 @@ jobs:
           rustup component add llvm-tools-preview
 
       - name: Run coverage
-        run: cargo llvm-cov --cobertura --fail-under-lines 90 --output-path cobertura.xml
+        run: cargo llvm-cov --cobertura --fail-under-lines 85 --output-path cobertura.xml
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4

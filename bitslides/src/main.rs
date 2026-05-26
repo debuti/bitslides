@@ -70,7 +70,7 @@ fn process_all_configs(config_paths: Vec<&PathBuf>) -> Result<(Vec<Rootset>, Opt
                         })
                         .collect::<Vec<PathBuf>>();
 
-                    rootsets.push(Rootset { keyword, roots });
+                    rootsets.push(Rootset::new(keyword, roots));
 
                     // Yeah, only the trace of the last config file that defines it will prevail
                     // FIXME: Maybe move to the cli?

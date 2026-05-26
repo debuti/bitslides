@@ -317,7 +317,7 @@ async fn test_file_monitoring_behavior() {
     let trace_content = {
         // Clean shutdown to flush tracer
         drop(token);
-        // tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
 
         let trace_content = std::fs::read_to_string(&trace_path).unwrap();
 

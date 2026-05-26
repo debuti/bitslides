@@ -48,6 +48,7 @@ impl Token {
 impl Drop for Token {
     fn drop(&mut self) {
         if let Some(cancellation_tx) = self.cancellation_tx.take() {
+            // FIXME: Set and forget operation. We may want to wait until all the tasks are actually shutdown
             let _ = cancellation_tx.send(());
         }
     }
