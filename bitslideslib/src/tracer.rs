@@ -59,6 +59,8 @@ impl Tracer {
         };
 
         // Drop the JoinHandle. The async task is now free to die when it finishes its job
+
+        // FIXME: Retrieve the handle to control its lifetime and ensure it is properly shutdown (see https://github.com/debuti/bitslides/pull/5#discussion_r3299838669)
         tokio::spawn(async move {
             while let Some(msg) = rx.recv().await {
                 if stdout {

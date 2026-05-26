@@ -160,7 +160,6 @@ async fn main_w_args(
     // Wait for shutdown signal (either from Ctrl+C handler or test)
     shutdown_signal.await?;
 
-    // token.enough().await
     Ok(())
 }
 

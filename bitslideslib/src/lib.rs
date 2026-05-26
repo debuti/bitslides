@@ -80,6 +80,7 @@ pub async fn slide(config: GlobalConfig) -> Result<Token> {
                 move |res: std::result::Result<notify::Event, notify::Error>| {
                     if let Ok(event) = res {
                         match event.kind {
+                            // FIXME: Should we listen to Remove events? (See https://github.com/debuti/bitslides/pull/5#discussion_r3299838685)
                             EventKind::Modify(_) | EventKind::Create(_) | EventKind::Remove(_) => {
                                 let _ = tracer
                                     .sync_log("Event", &format!("Filesystem event: {event:?} "));
@@ -100,6 +101,7 @@ pub async fn slide(config: GlobalConfig) -> Result<Token> {
         };
         {
             let tracer = tracer.annotate_author("AsyncWatcher".to_string());
+            // FIXME: Retrieve the handle to control its lifetime and ensure it is properly shutdown (see https://github.com/debuti/bitslides/pull/5#discussion_r3299838669)
             tokio::spawn(
                 // FIXME: Move this async task to a separate function and file if it grows more
                 async move {
@@ -140,6 +142,7 @@ pub async fn slide(config: GlobalConfig) -> Result<Token> {
     {
         let tracer = tracer.annotate_author("Core".to_string());
 
+        // FIXME: Retrieve the handle to control its lifetime and ensure it is properly shutdown (see https://github.com/debuti/bitslides/pull/5#discussion_r3299838669)
         tokio::spawn(async move {
             // Core initialization
 
@@ -205,6 +208,8 @@ pub async fn slide(config: GlobalConfig) -> Result<Token> {
 
                 // Spawn a new tokio async task for this syncjob
                 // Drop the JoinHandle. The async task is now free to die when it finishes its job
+
+                // FIXME: Retrieve the handle to control its lifetime and ensure it is properly shutdown (see https://github.com/debuti/bitslides/pull/5#discussion_r3299838669)
                 tokio::spawn(async move {
                     loop {
                         if let Err(e) =
