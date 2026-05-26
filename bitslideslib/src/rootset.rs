@@ -19,7 +19,8 @@ pub struct Rootset {
 }
 
 impl Rootset {
-    pub fn new(keyword: String, roots: Vec<PathBuf>) -> Self {
+    #[must_use]
+    pub const fn new(keyword: String, roots: Vec<PathBuf>) -> Self {
         Self { keyword, roots }
     }
 
@@ -27,8 +28,10 @@ impl Rootset {
     ///
     /// This function will identify the volumes and slides for each volume in the current system.
     ///
-    /// Returns a `Result` with a `HashMap` of `Volumes` indexed by their name
-    pub fn into_volumes(self) -> Result<HashMap<String, Volume>> {
+    /// Returns a `HashMap` of `Volumes` indexed by their name
+    ///
+    #[must_use]
+    pub fn into_volumes(self) -> HashMap<String, Volume> {
         let mut volumes: HashMap<String, Volume> = HashMap::new();
 
         // Identify the volumes in each root
@@ -58,7 +61,7 @@ impl Rootset {
                 }
                 let mut ptr = 0;
                 while ptr < length {
-                    let drive = CStr::from_bytes_until_nul(&buf[ptr..]).unwrap();
+                    let drive = std::ffi::CStr::from_bytes_until_nul(&buf[ptr..]).unwrap();
                     let offset_to_next = 1 + drive.count_bytes();
                     ptr += offset_to_next;
                     result.push(PathBuf::from(drive.to_str().unwrap()));
@@ -67,13 +70,13 @@ impl Rootset {
             };
 
             for drive in drives {
-                if let Some(volume) = Volume::from_path(drive, keyword) {
+                if let Some(volume) = Volume::from_path(&drive, &self.keyword) {
                     volumes.insert(volume.name.clone(), volume);
                 }
             }
         }
 
-        Ok(volumes)
+        volumes
     }
 
     /// Identify volumes inside a each root folder.
@@ -100,7 +103,7 @@ impl Rootset {
             let file_type = entry.file_type();
             if let Ok(file_type) = file_type {
                 if file_type.is_dir() {
-                    if let Some(volume) = Volume::from_path(entry.path(), keyword) {
+                    if let Some(volume) = Volume::from_path(&entry.path(), keyword) {
                         volumes.insert(volume.name.clone(), volume);
                     }
                 }
@@ -149,7 +152,7 @@ mod tests {
                 keyword: "slides".into(),
                 roots: ctx.roots,
             };
-            rootset_config.into_volumes().unwrap()
+            rootset_config.into_volumes()
         };
 
         // Check: The result should contain 4 volumes

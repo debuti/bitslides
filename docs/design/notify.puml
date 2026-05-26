@@ -2,36 +2,81 @@
 
 title Notifier Component Diagram
 
-!define TASK_COLOR #LightBlue
+!define ASYNC_TASK_COLOR #LightBlue
+!define SYNC_TASK_COLOR #LightCyan
 !define QUEUE_COLOR #LightGreen
+skinparam frame {
+    BackgroundColor ASYNC_TASK_COLOR
+}
+skinparam component {
+    BackgroundColor ASYNC_TASK_COLOR
+    Style Rectangle
+}
+skinparam queue {
+    BackgroundColor QUEUE_COLOR
+}
 
-component [Notifier Task] as Notifier TASK_COLOR
+() user
+component [Tracer] as Tracer
+frame "AsyncWatcher" as AsyncWatcher{
+    component [SyncWatcher] as SyncWatcher SYNC_TASK_COLOR
+}
+component [Core] as Core
 
-queue "Queue 1" as Q1 QUEUE_COLOR
-queue "Queue 2" as Q2 QUEUE_COLOR
-queue "Queue 3" as Q3 QUEUE_COLOR
+queue "CancellationQ" as CancellationQ
+user --> CancellationQ : tx
+CancellationQ --> AsyncWatcher : rx
 
-component [Syncjob Task A] as TaskA TASK_COLOR
-component [Syncjob Task B] as TaskB TASK_COLOR
-component [Syncjob Task C] as TaskC TASK_COLOR
+queue "EventQ" as EventQ
+SyncWatcher --> EventQ : tx
+EventQ --> Core : rx
 
-Notifier --> Q1 : tx
-Notifier --> Q2 : tx
-Notifier --> Q3 : tx
+queue "CommandQ" as CommandQ
+Core --> CommandQ : tx
+CommandQ --> AsyncWatcher : rx
 
-Q1 --> TaskA : rx
-Q2 --> TaskB : rx
-Q3 --> TaskC : rx
+queue "TracerQ" as TracerQ
+AsyncWatcher --> TracerQ : tx
+SyncWatcher --> TracerQ : tx
+Core --> TracerQ : tx
+TracerQ --> Tracer : rx
 
+queue "Queue A" as QA
+queue "Queue B" as QB
+queue "Queue C" as QC
 
-note right of Notifier
-    Central task that publishes
-    notifications to multiple mpsc queues
+component [Syncjob A] as SyncJobA
+component [Syncjob B] as SyncJobB
+component [Syncjob C] as SyncJobC
+
+Core --> QA : tx
+Core --> QB : tx
+Core --> QC : tx
+
+QA --> SyncJobA : rx
+QB --> SyncJobB : rx
+QC --> SyncJobC : rx
+
+SyncJobA --> TracerQ : tx
+
+note top of Core
+    Central task that
+    publishes notifications
+    to multiple mpsc queues
 end note
 
-note top of Q3
-    Each mpsc queue is consumed
+note top of QC
+    Each mpsc syncjob
+    queue is consumed
     by exactly one task
+end note
+
+note right of CancellationQ
+    The user sends a cancellation signal to the AsyncWatcher, which then gracefully shuts
+    down the SyncWatcher. When this happens the EventQ is closed, which causes the Core to
+    stop consuming events and exit. After Core exits, all the SyncJob queues are also closed,
+    which causes the SyncJobs to exit. Finally, since no tx is still alive, the TracerQ is
+    closed and so is the Tracer.
 end note
 
 @enduml

@@ -150,13 +150,12 @@ async fn test_sync_directory() {
     let src_dir = temp_dir.path().join("src");
     let dest_dir = temp_dir.path().join("dest");
 
-    let (tracer, handle) = {
+    let tracer = {
         let trace_path = temp_dir.path().join("test.trace");
-        let (tracer, handle) = tracer::Tracer::new(&Some(&trace_path)).await.unwrap();
-        (
-            tracer.annotate_author("test_sync_directory".to_owned()),
-            handle.expect("Should have a handle"),
-        )
+        let tracer = tracer::Tracer::new(&[tracer::Sink::File(&trace_path)])
+            .await
+            .unwrap();
+        tracer.annotate_author("test_sync_directory".to_owned())
     };
 
     let requests = [
@@ -210,13 +209,8 @@ async fn test_sync_directory() {
         fs::remove_dir_all(&temp_dir).unwrap();
     }
 
-    // Clean up tracer
-    {
-        // Drop the tx channel to allow the tracer to finish
-        drop(tracer);
-        // Wait for the tracer task to finish
-        handle.await.unwrap();
-    }
+    // Drop the tx channel to allow the tracer task to finish
+    drop(tracer);
 }
 
 /// Test that nothing happens when the source directory is empty.
@@ -229,13 +223,12 @@ async fn test_sync_empty_directory() {
     let src_dir = temp_dir.path().join("src");
     let dest_dir = temp_dir.path().join("dest");
 
-    let (tracer, handle) = {
+    let tracer = {
         let trace_path = temp_dir.path().join("test.trace");
-        let (tracer, handle) = tracer::Tracer::new(&Some(&trace_path)).await.unwrap();
-        (
-            tracer.annotate_author("test_sync_empty_directory".to_owned()),
-            handle.expect("Should have a handle"),
-        )
+        let tracer = tracer::Tracer::new(&[tracer::Sink::File(&trace_path)])
+            .await
+            .unwrap();
+        tracer.annotate_author("test_sync_empty_directory".to_owned())
     };
 
     // Prerequisite: Create empty source directory
@@ -269,13 +262,8 @@ async fn test_sync_empty_directory() {
         assert_eq!(entries.count(), 0);
     }
 
-    // Clean up tracer
-    {
-        // Drop the tx channel to allow the tracer to finish
-        drop(tracer);
-        // Wait for the tracer task to finish
-        handle.await.unwrap();
-    }
+    // Drop the tx channel to allow the tracer task to finish
+    drop(tracer);
 }
 
 /// Test that a file belonging to a nested directory is copied from the source to the destination directory.
@@ -291,13 +279,12 @@ async fn test_sync_nested_directories() {
     let nested_dir = src_dir.join("nested");
     let dest_dir = temp_dir.path().join("dest");
 
-    let (tracer, handle) = {
+    let tracer = {
         let trace_path = temp_dir.path().join("test.trace");
-        let (tracer, handle) = tracer::Tracer::new(&Some(&trace_path)).await.unwrap();
-        (
-            tracer.annotate_author("test_sync_nested_directories".to_owned()),
-            handle.expect("Should have a handle"),
-        )
+        let tracer = tracer::Tracer::new(&[tracer::Sink::File(&trace_path)])
+            .await
+            .unwrap();
+        tracer.annotate_author("test_sync_nested_directories".to_owned())
     };
 
     // Prerequisite: Create nested directory structure
@@ -341,13 +328,8 @@ async fn test_sync_nested_directories() {
     assert!(!src_file_path.exists());
     assert!(!nested_dir.exists());
 
-    // Clean up tracer
-    {
-        // Drop the tx channel to allow the tracer to finish
-        drop(tracer);
-        // Wait for the tracer task to finish
-        handle.await.unwrap();
-    }
+    // Drop the tx channel to allow the tracer task to finish
+    drop(tracer);
 }
 
 /// Setup the environment for testing all move_file permutations.

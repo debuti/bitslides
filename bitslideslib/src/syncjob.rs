@@ -2,12 +2,12 @@ use std::fmt::Debug;
 
 use tokio::sync::mpsc;
 
-/// SyncJob representation.
+/// [`SyncJob`] representation.
 ///
 /// A syncjob defines a source and a final destination, optionally passing via another volume.
 /// Although it is optional, the value has to be provided to help the algorithm
 ///
-pub(crate) struct SyncJob {
+pub struct SyncJob {
     /// Source volume
     pub(crate) src: String,
     /// Proxy volume (intermediate staging volume).
@@ -23,7 +23,7 @@ pub(crate) struct SyncJob {
 
 /// Internal structure holding the synchronization trigger channel.
 ///
-/// There is one sender and one receiver per SyncJob. The sender is used to trigger
+/// There is one sender and one receiver per [`SyncJob`]. The sender is used to trigger
 /// synchronization events from the notification system, while the receiver listens for these triggers.
 ///
 struct SyncJobInner {
@@ -32,12 +32,6 @@ struct SyncJobInner {
 }
 
 impl SyncJob {
-    /// Capacity of the internal synchronization trigger channel.
-    ///
-    /// 1 slot for the current event and 1 slot for a possible next event.
-    ///
-    const CHANNEL_CAPACITY: usize = 2;
-
     /// Creates a new [`SyncJob`] with the given source, proxy and destination volumes.
     ///
     /// # Parameters
@@ -52,7 +46,7 @@ impl SyncJob {
     /// internal trigger channel used to coordinate synchronization.
     ///
     pub(crate) fn new(src: &str, via: &str, dst: &str) -> Self {
-        let (tx, rx) = mpsc::channel(Self::CHANNEL_CAPACITY);
+        let (tx, rx) = mpsc::channel(crate::config::SYNCJOB_CHANNEL_CAPACITY);
         Self {
             src: src.to_string(),
             via: via.to_string(),
@@ -69,7 +63,7 @@ impl SyncJob {
     ///
     /// An `Option` containing the `Sender<()>` if it was available, or `None` if it has already been taken.
     ///
-    pub(crate) fn take_trigger(&mut self) -> Option<tokio::sync::mpsc::Sender<()>> {
+    pub(crate) const fn take_trigger(&mut self) -> Option<tokio::sync::mpsc::Sender<()>> {
         self.inner.tx.take()
     }
 
@@ -81,12 +75,12 @@ impl SyncJob {
     ///
     /// A mutable reference to the `Receiver<()>`.
     ///
-    pub(crate) fn borrow_receiver(&mut self) -> &mut tokio::sync::mpsc::Receiver<()> {
+    pub(crate) const fn borrow_receiver(&mut self) -> &mut tokio::sync::mpsc::Receiver<()> {
         &mut self.inner.rx
     }
 }
 
-/// SyncJob Debug implementation.
+/// [`SyncJob`] [`Debug`] implementation.
 ///
 impl Debug for SyncJob {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -100,7 +94,7 @@ impl Debug for SyncJob {
     }
 }
 
-/// Syncjob PartialEq implementation.
+/// [`SyncJob`] [`PartialEq`] implementation.
 ///
 impl PartialEq for SyncJob {
     fn eq(&self, other: &Self) -> bool {
@@ -108,6 +102,6 @@ impl PartialEq for SyncJob {
     }
 }
 
-// FIXME: Move to a owned type (struct {inner: Vec<SyncJob>}) and impl iterator on it. Also provide a sort
+// FIXME: Move to a owned type (struct (Vec<SyncJob>)) and impl iterator on it. Also provide a sort
 // method to sort the syncjobs by sync order
 pub type SyncJobs = Vec<SyncJob>;
