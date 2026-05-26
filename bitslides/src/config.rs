@@ -13,6 +13,7 @@ pub struct Config {
     // Root folders to watch
     pub roots: Vec<String>,
     // Optional trace file path format
+    // FIXME: Add option to select stdout / file / both (see https://github.com/debuti/bitslides/pull/5#discussion_r3299838647)
     pub trace: Option<String>,
 }
 

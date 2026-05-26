@@ -1,5 +1,5 @@
 use super::CollisionPolicy;
-use super::RootsetConfig;
+use crate::Rootset;
 use std::path::PathBuf;
 
 pub use checksums::Algorithm;
@@ -11,7 +11,7 @@ pub use checksums::Algorithm;
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct GlobalConfig {
     /// List of rootset configurations
-    pub rootsets: Vec<RootsetConfig>,
+    pub rootsets: Vec<Rootset>,
     /// If true, do not perform any filesystem operation
     pub dry_run: bool,
     /// If provided, the path to a file where to write the trace

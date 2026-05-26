@@ -1,5 +1,5 @@
 use anyhow::{bail, Result};
-use bitslideslib::{enough, slide, Algorithm, CollisionPolicy, GlobalConfig, RootsetConfig};
+use bitslideslib::{slide, Algorithm, CollisionPolicy, GlobalConfig, Rootset};
 use chrono::prelude::*;
 use config::DEFAULT_KEYWORD;
 use std::path::PathBuf;
@@ -40,11 +40,9 @@ fn generate_trace_path(trace_fmt: &str) -> Option<PathBuf> {
     Some(trace)
 }
 
-/// Processes all configuration files and returns a list of `RootsetConfig` instances.
+/// Processes all configuration files and returns a list of `Rootset` instances.
 ///
-fn process_all_configs(
-    config_paths: Vec<&PathBuf>,
-) -> Result<(Vec<RootsetConfig>, Option<PathBuf>)> {
+fn process_all_configs(config_paths: Vec<&PathBuf>) -> Result<(Vec<Rootset>, Option<PathBuf>)> {
     let mut success = false;
     let mut rootsets = Vec::new();
     let mut trace = None;
@@ -72,9 +70,10 @@ fn process_all_configs(
                         })
                         .collect::<Vec<PathBuf>>();
 
-                    rootsets.push(RootsetConfig { keyword, roots });
+                    rootsets.push(Rootset::new(keyword, roots));
 
                     // Yeah, only the trace of the last config file that defines it will prevail
+                    // FIXME: Maybe move to the cli?
                     if let Some(trace_fmt) = config.trace {
                         trace = generate_trace_path(&trace_fmt);
                     }
@@ -144,7 +143,8 @@ async fn main_w_args(
 
     let (rootsets, trace) = process_all_configs(config_files.into_iter().collect())?;
 
-    let keep_alive = slide(GlobalConfig {
+    // Token saved until end of scope
+    let _token = slide(GlobalConfig {
         rootsets,
         dry_run,
         trace,
@@ -160,7 +160,7 @@ async fn main_w_args(
     // Wait for shutdown signal (either from Ctrl+C handler or test)
     shutdown_signal.await?;
 
-    enough(keep_alive).await
+    Ok(())
 }
 
 /// Entry point of the application.
