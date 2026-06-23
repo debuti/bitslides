@@ -127,7 +127,7 @@ impl Volume {
                         }
                     }
                 }
-            };
+            }
 
             log::warn!("A volume has been identified at {maybe_volume:?} but it is nameless");
         }

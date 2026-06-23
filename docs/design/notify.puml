@@ -24,22 +24,22 @@ frame "AsyncWatcher" as AsyncWatcher{
 component [Core] as Core
 
 queue "CancellationQ" as CancellationQ
-user --> CancellationQ : tx
-CancellationQ --> AsyncWatcher : rx
+user --> CancellationQ
+CancellationQ --> AsyncWatcher : Some(()) / die 
 
 queue "EventQ" as EventQ
-SyncWatcher --> EventQ : tx
-EventQ --> Core : rx
+SyncWatcher --> EventQ
+EventQ --> Core : Some(event happened) / die
 
 queue "CommandQ" as CommandQ
-Core --> CommandQ : tx
-CommandQ --> AsyncWatcher : rx
+Core --> CommandQ
+CommandQ --> AsyncWatcher : Some(add/remove watch)
 
 queue "TracerQ" as TracerQ
-AsyncWatcher --> TracerQ : tx
-SyncWatcher --> TracerQ : tx
-Core --> TracerQ : tx
-TracerQ --> Tracer : rx
+AsyncWatcher --> TracerQ
+SyncWatcher --> TracerQ
+Core --> TracerQ
+TracerQ --> Tracer : Some(log) / die
 
 queue "Queue A" as QA
 queue "Queue B" as QB
@@ -49,15 +49,15 @@ component [Syncjob A] as SyncJobA
 component [Syncjob B] as SyncJobB
 component [Syncjob C] as SyncJobC
 
-Core --> QA : tx
-Core --> QB : tx
-Core --> QC : tx
+Core --> QA
+Core --> QB
+Core --> QC
 
-QA --> SyncJobA : rx
-QB --> SyncJobB : rx
-QC --> SyncJobC : rx
+QA --> SyncJobA : Some(trigger) / die
+QB --> SyncJobB : Some(trigger) / die
+QC --> SyncJobC : Some(trigger) / die
 
-SyncJobA --> TracerQ : tx
+SyncJobA --> TracerQ
 
 note top of Core
     Central task that

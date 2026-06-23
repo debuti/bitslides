@@ -36,6 +36,7 @@ impl Tracer {
             });
         }
 
+        // FIXME: Create an enum for this instead of String
         let (tx, mut rx) = mpsc::channel::<String>(crate::config::TRACE_CHANNEL_CAPACITY);
 
         let stdout = sinks.iter().filter(|x| Sink::StdOut == **x).count() > 0;

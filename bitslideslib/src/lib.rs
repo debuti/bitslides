@@ -41,20 +41,243 @@ pub use config::{Algorithm, CollisionPolicy, GlobalConfig};
 pub use rootset::Rootset;
 pub use token::Token;
 
-/// Monitor all the slides.
+
+/// Watcher task creation
+/// 
+/// A watcher takes either a cancellation signal to turn the system off or a
+/// command, and it emits events.
+/// 
+async fn watcher(
+    tracer: &Tracer,
+    event_tx: mpsc::Sender<Event>,
+    mut command_rx: mpsc::Receiver<String>,
+    mut cancellation_rx: oneshot::Receiver<()>,
+) -> Result<()> {
+    // Synchronous watcher (only one instance for all watched paths)
+    let mut watcher = {
+        let tracer = tracer.annotate_author("SyncWatcher".to_string());
+        let _ = tracer.async_log("Init", "Starting slides sync...").await;
+
+        notify::recommended_watcher(
+            move |res: std::result::Result<notify::Event, notify::Error>| {
+                if let Ok(event) = res {
+                    match event.kind {
+                        // FIXME: Should we listen to Remove events? (See https://github.com/debuti/bitslides/pull/5#discussion_r3299838685)
+                        EventKind::Modify(_) | EventKind::Create(_) | EventKind::Remove(_) => {
+                            let _ =
+                                tracer.sync_log("Event", &format!("Filesystem event: {event:?} "));
+
+                            if event_tx.capacity() > 0 {
+                                let _ = tracer.sync_log("Event", "launched");
+                                // Blocking send because we are doing this from sync code
+                                let _ = event_tx.blocking_send(event);
+                            } else {
+                                let _ = tracer.sync_log("Event", "ignored");
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            },
+        )?
+    };
+
+    // Asynchronous watcher (wraps the sync watcher)
+    {
+        let tracer = tracer.annotate_author("AsyncWatcher".to_string());
+
+        // FIXME: Retrieve the handle to control its lifetime and ensure it is properly shutdown (see https://github.com/debuti/bitslides/pull/5#discussion_r3299838669)
+        tokio::spawn(
+            // FIXME: Move this async task to a separate function and file if it grows more
+            async move {
+                loop {
+                    select! {
+                        // Command queue
+                        command = command_rx.recv() => {
+                           let _ = tracer.async_log("Command", &format!("Working on {command:?}...")).await;
+                           if let Some(command) = command {
+                               if command.starts_with("watchr ") {
+                                   #[allow(clippy::expect_used)]
+                                   let path_str = command.strip_prefix("watchr ").expect("Invalid command format");
+                                   let path = PathBuf::from(path_str);
+                                   if let Err(e) = watcher.watch(&path, RecursiveMode::Recursive) {
+                                       let _ = tracer.async_log("Error", &format!("Failed to watch {}: {:?}", path.display(), e)).await;
+                                   } else {
+                                       let _ = tracer.async_log("Command", &format!("Watching {}...", path.display())).await;
+                                   }
+                               }
+                               else {
+                                   let _ = tracer.async_log("Command", &format!("Unknown command: {command:?}")).await;
+                               }
+                           } else {
+                                break;
+                           }
+                        }
+
+                        // Cancellation signal
+                        _ = &mut cancellation_rx => {
+                            let _= tracer.async_log("Shutdown", "Shutdown signal received, performing cleanup...").await;
+                            break;
+                        }
+                    }
+                }
+            },
+        );
+    }
+
+    Ok(())
+}
+
+/// Core task creation
+/// 
+/// The core receives events and, if needed, triggers commands. It also
+/// spawns as many syncjob tasks as needed.
+/// 
+fn core(
+    tracer: &Tracer,
+    mut event_rx: mpsc::Receiver<Event>,
+    command_tx: mpsc::Sender<String>,
+    config: GlobalConfig,
+) {
+    let tracer = tracer.annotate_author("Core".to_string());
+
+    // FIXME: Retrieve the handle to control its lifetime and ensure it is properly shutdown (see https://github.com/debuti/bitslides/pull/5#discussion_r3299838669)
+    tokio::spawn(async move {
+        // Core initialization
+
+        let mut volumes = {
+            let mut result = HashMap::new();
+
+            // Analyze each rootset to extract volumes and slides
+            for rootset_config in config.rootsets {
+                let some_volumes = rootset_config.into_volumes();
+                result.extend(some_volumes);
+            }
+
+            log::debug!("Volumes for all configs: {result:#?}");
+            result
+        };
+
+        // Now analyze the volumes to generate the sync jobs
+        let mut syncjobs = build_syncjobs(&mut volumes)?;
+
+        log::debug!("Sync jobs: {syncjobs:#?}");
+
+        let move_req = MoveStrategy {
+            collision: config.collision,
+            safe: config.safe,
+            check: config.check,
+            retries: config.retries,
+        };
+
+        let watcher_db = {
+            let mut watcher_db = Vec::new();
+            for syncjob in &mut syncjobs {
+                let path = volumes
+                    .get(&syncjob.src)
+                    .and_then(|v| v.slides.get(&syncjob.dst))
+                    .map(|s| s.path.canonicalize())
+                    .ok_or_else(|| anyhow!("Invalid sync job paths: {:?}", syncjob))??;
+
+                let Some(trigger) = syncjob.take_trigger() else {
+                    bail!("No trigger found for sync job {syncjob:?}");
+                };
+
+                watcher_db.push((path, trigger));
+            }
+            watcher_db
+        };
+
+        for mut syncjob in syncjobs {
+            log::debug!("Syncing {:?}", syncjob);
+            let src = volumes
+                .get(&syncjob.src)
+                .and_then(|v| v.slides.get(&syncjob.dst))
+                .map(|s| s.path.clone())
+                .ok_or_else(|| anyhow!("Invalid sync job paths: {:?}", syncjob))?;
+            let dst = volumes
+                .get(&syncjob.via)
+                .and_then(|v| v.slides.get(&syncjob.dst))
+                .map(|s| s.path.clone())
+                .ok_or_else(|| anyhow!("Invalid sync job paths: {:?}", syncjob))?;
+            let trace = tracer.annotate_author(format!("{syncjob:?}"));
+            let move_req = move_req.clone();
+
+            command_tx.send(format!("watchr {}", src.display())).await?;
+
+            // Spawn a new tokio async task for this syncjob
+            // Drop the JoinHandle. The async task is now free to die when it finishes its job
+
+            // Syncjob loop
+            // FIXME: Retrieve the handle to control its lifetime and ensure it is properly shutdown (see https://github.com/debuti/bitslides/pull/5#discussion_r3299838669)
+            tokio::spawn(async move {
+                loop {
+                    if let Err(e) =
+                        sync_slide(&syncjob, &src, &dst, config.dry_run, &trace, &move_req).await
+                    {
+                        bail!("Error syncing {:?} -> {:?}: {:?}", src, dst, e);
+                    }
+                    // FIXME: Maybe use tokio::sync::notify here instead!
+                    // None is received when the mpsc::Sender is dropped
+                    if syncjob.borrow_receiver().recv().await.is_none() {
+                        return Ok(());
+                    }
+                }
+            });
+        }
+
+        // Core main loop
+        'event_loop: while let Some(event) = event_rx.recv().await {
+            match event.kind {
+                EventKind::Modify(_) | EventKind::Create(_) | EventKind::Remove(_) => {
+                    //TODO: See if the path is rootsets
+                    //TODO: See if the path is slides
+
+                    // See if the path is syncjobs
+                    for (path, trigger) in &watcher_db {
+                        // Check if any event path is within the watched directory
+                        for event_path in &event.paths {
+                            let event_path = event_path.canonicalize();
+                            if let Ok(event_path) = event_path {
+                                if event_path.starts_with(path) {
+                                    let _ = tracer
+                                        .async_log(
+                                            "Event",
+                                            &format!("launching {}", event_path.display()),
+                                        )
+                                        .await;
+                                    if trigger.capacity() > 0 {
+                                        let _ = trigger.send(()).await;
+                                        continue 'event_loop;
+                                    }
+                                    let _ = tracer.async_log("Event", "skipped!").await;
+                                    continue 'event_loop;
+                                }
+                            }
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        Ok::<(), anyhow::Error>(())
+    });
+}
+
+/// Monitor all the rootsets, volumes and slides.
 ///
 /// This function will take the input `config`, identify the volumes and slides,
-/// and execute the sync jobs. Returns a Result indicating success or failure.
+/// and execute the sync jobs. Returns a Result indicating success (with a `Token`) or failure.
 ///
 /// # Errors
 ///
-/// This function will return an error if any of the operations fail, such as reading directories, syncing slides, etc.
+/// This function errors out if any of the steps to set up the slides fails.
 ///
 /// # Panics
 ///
 /// This function will panic on developer errors, such as invalid command formats.
 ///
-#[allow(clippy::too_many_lines)]
 pub async fn slide(config: GlobalConfig) -> Result<Token> {
     log::debug!("Config: {config:#?}");
 
@@ -64,207 +287,17 @@ pub async fn slide(config: GlobalConfig) -> Result<Token> {
         Tracer::new(&sinks).await?
     };
 
-    // Core mpsc channels
-    let (cancellation_tx, mut cancellation_rx) = oneshot::channel::<()>();
-    let (event_tx, mut event_rx) = mpsc::channel::<Event>(config::EVENT_CHANNEL_CAPACITY);
-    let (command_tx, mut command_rx) = mpsc::channel::<String>(config::COMMAND_CHANNEL_CAPACITY);
+    // Main channels
+    let (cancellation_tx, cancellation_rx) = oneshot::channel::<()>();
+    let (event_tx, event_rx) = mpsc::channel::<Event>(config::EVENT_CHANNEL_CAPACITY);
+    // FIXME: Create an enum instead of raw Strings
+    let (command_tx, command_rx) = mpsc::channel::<String>(config::COMMAND_CHANNEL_CAPACITY);
 
     // Async watcher
-    {
-        // Watcher (only one instance for all watched pathss)
-        let mut watcher = {
-            let tracer = tracer.annotate_author("SyncWatcher".to_string());
-            let _ = tracer.async_log("Init", "Starting slides sync...").await;
-
-            notify::recommended_watcher(
-                move |res: std::result::Result<notify::Event, notify::Error>| {
-                    if let Ok(event) = res {
-                        match event.kind {
-                            // FIXME: Should we listen to Remove events? (See https://github.com/debuti/bitslides/pull/5#discussion_r3299838685)
-                            EventKind::Modify(_) | EventKind::Create(_) | EventKind::Remove(_) => {
-                                let _ = tracer
-                                    .sync_log("Event", &format!("Filesystem event: {event:?} "));
-
-                                if event_tx.capacity() > 0 {
-                                    let _ = tracer.sync_log("Event", "launched");
-                                    // Blocking send because we are doing this from sync code
-                                    let _ = event_tx.blocking_send(event);
-                                } else {
-                                    let _ = tracer.sync_log("Event", "ignored");
-                                }
-                            }
-                            _ => {}
-                        }
-                    }
-                },
-            )?
-        };
-        {
-            let tracer = tracer.annotate_author("AsyncWatcher".to_string());
-            // FIXME: Retrieve the handle to control its lifetime and ensure it is properly shutdown (see https://github.com/debuti/bitslides/pull/5#discussion_r3299838669)
-            tokio::spawn(
-                // FIXME: Move this async task to a separate function and file if it grows more
-                async move {
-                    loop {
-                        select! {
-                            command = command_rx.recv() => {
-                               let _ = tracer.async_log("Command", &format!("Working on {command:?}...")).await;
-                               if let Some(command) = command {
-                                   if command.starts_with("watchr ") {
-                                       #[allow(clippy::expect_used)]
-                                       let path_str = command.strip_prefix("watchr ").expect("Invalid command format");
-                                       let path = PathBuf::from(path_str);
-                                       if let Err(e) = watcher.watch(&path, RecursiveMode::Recursive) {
-                                           let _ = tracer.async_log("Error", &format!("Failed to watch {}: {:?}", path.display(), e)).await;
-                                       } else {
-                                           let _ = tracer.async_log("Command", &format!("Watching {}...", path.display())).await;
-                                       }
-                                   }
-                                   else {
-                                       let _ = tracer.async_log("Command", &format!("Unknown command: {command:?}")).await;
-                                   }
-                               } else {
-                                    break;
-                               }
-                            }
-                            _ = &mut cancellation_rx => {
-                                let _= tracer.async_log("Shutdown", "Shutdown signal received, performing cleanup...").await;
-                                break;
-                            }
-                        }
-                    }
-                },
-            );
-        }
-    }
+    watcher(&tracer, event_tx, command_rx, cancellation_rx).await?;
 
     // Core creation
-    {
-        let tracer = tracer.annotate_author("Core".to_string());
-
-        // FIXME: Retrieve the handle to control its lifetime and ensure it is properly shutdown (see https://github.com/debuti/bitslides/pull/5#discussion_r3299838669)
-        tokio::spawn(async move {
-            // Core initialization
-
-            let mut volumes = {
-                let mut result = HashMap::new();
-
-                // Analyze each rootset to extract volumes and slides
-                for rootset_config in config.rootsets {
-                    let some_volumes = rootset_config.into_volumes();
-                    result.extend(some_volumes);
-                }
-
-                log::debug!("Volumes for all configs: {result:#?}");
-                result
-            };
-
-            // Now analyze the volumes to generate the sync jobs
-            let mut syncjobs = build_syncjobs(&mut volumes)?;
-
-            log::debug!("Sync jobs: {syncjobs:#?}");
-
-            let move_req = MoveStrategy {
-                collision: config.collision,
-                safe: config.safe,
-                check: config.check,
-                retries: config.retries,
-            };
-
-            let watcher_db = {
-                let mut watcher_db = Vec::new();
-                for syncjob in &mut syncjobs {
-                    let path = volumes
-                        .get(&syncjob.src)
-                        .and_then(|v| v.slides.get(&syncjob.dst))
-                        .map(|s| s.path.canonicalize())
-                        .ok_or_else(|| anyhow!("Invalid sync job paths: {:?}", syncjob))??;
-
-                    let Some(trigger) = syncjob.take_trigger() else {
-                        bail!("No trigger found for sync job {syncjob:?}");
-                    };
-
-                    watcher_db.push((path, trigger));
-                }
-                watcher_db
-            };
-
-            for mut syncjob in syncjobs {
-                log::debug!("Syncing {:?}", syncjob);
-                let src = volumes
-                    .get(&syncjob.src)
-                    .and_then(|v| v.slides.get(&syncjob.dst))
-                    .map(|s| s.path.clone())
-                    .ok_or_else(|| anyhow!("Invalid sync job paths: {:?}", syncjob))?;
-                let dst = volumes
-                    .get(&syncjob.via)
-                    .and_then(|v| v.slides.get(&syncjob.dst))
-                    .map(|s| s.path.clone())
-                    .ok_or_else(|| anyhow!("Invalid sync job paths: {:?}", syncjob))?;
-                let trace = tracer.annotate_author(format!("{syncjob:?}"));
-                let move_req = move_req.clone();
-
-                command_tx.send(format!("watchr {}", src.display())).await?;
-
-                // Spawn a new tokio async task for this syncjob
-                // Drop the JoinHandle. The async task is now free to die when it finishes its job
-
-                // FIXME: Retrieve the handle to control its lifetime and ensure it is properly shutdown (see https://github.com/debuti/bitslides/pull/5#discussion_r3299838669)
-                tokio::spawn(async move {
-                    loop {
-                        if let Err(e) =
-                            sync_slide(&syncjob, &src, &dst, config.dry_run, &trace, &move_req)
-                                .await
-                        {
-                            bail!("Error syncing {:?} -> {:?}: {:?}", src, dst, e);
-                        }
-                        // FIXME: Maybe use tokio::sync::notify here instead!
-                        // None is received when the mpsc::Sender is dropped
-                        if syncjob.borrow_receiver().recv().await.is_none() {
-                            return Ok(());
-                        }
-                    }
-                });
-            }
-
-            // Core main loop
-            'event_loop: while let Some(event) = event_rx.recv().await {
-                match event.kind {
-                    EventKind::Modify(_) | EventKind::Create(_) | EventKind::Remove(_) => {
-                        //TODO: See if the path is rootsets
-                        //TODO: See if the path is slides
-
-                        // See if the path is syncjobs
-                        for (path, trigger) in &watcher_db {
-                            // Check if any event path is within the watched directory
-                            for event_path in &event.paths {
-                                let event_path = event_path.canonicalize();
-                                if let Ok(event_path) = event_path {
-                                    if event_path.starts_with(path) {
-                                        let _ = tracer
-                                            .async_log(
-                                                "Event",
-                                                &format!("launching {}", event_path.display()),
-                                            )
-                                            .await;
-                                        if trigger.capacity() > 0 {
-                                            let _ = trigger.send(()).await;
-                                            continue 'event_loop;
-                                        }
-                                        let _ = tracer.async_log("Event", "skipped!").await;
-                                        continue 'event_loop;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    _ => {}
-                }
-            }
-
-            Ok::<(), anyhow::Error>(())
-        });
-    }
+    core(&tracer, event_rx, command_tx, config);
 
     Ok(Token::new(cancellation_tx))
 }
