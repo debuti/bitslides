@@ -146,14 +146,6 @@ impl SyncJob {
     pub(crate) const fn borrow_receiver(&mut self) -> &mut tokio::sync::mpsc::Receiver<()> {
         &mut self.inner.rx
     }
-
-    pub(crate) fn via(&self) -> &str {
-        &self.meta.via
-    }
-
-    pub(crate) fn dst(&self) -> &str {
-        &self.meta.dst
-    }
 }
 
 // FIXME: Move to a owned type (struct (Vec<SyncJob>)) and impl iterator on it. Also provide a sort

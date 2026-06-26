@@ -47,6 +47,12 @@ impl crate::named_collection::Named for Slide {
 #[derive(Debug, PartialEq)]
 pub struct Slides(crate::named_collection::NamedCollection<Slide>);
 
+impl Default for Slides {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Slides {
     pub fn new() -> Self {
         Self(crate::named_collection::NamedCollection::new())

@@ -2,15 +2,7 @@ use crate::config::{self, SlideConfig};
 
 use super::slide::{Slide, Slides};
 use anyhow::{anyhow, bail, Result};
-use std::{
-    collections::{
-        hash_map::{IntoValues, Values},
-        HashMap,
-    },
-    hash::Hash,
-    ops::Index,
-    path::PathBuf,
-};
+use std::path::PathBuf;
 
 /// Volume representation.
 ///
@@ -194,6 +186,12 @@ impl crate::named_collection::Named for Volume {
 
 #[derive(Debug)]
 pub struct Volumes(crate::named_collection::NamedCollection<Volume>);
+
+impl Default for Volumes {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl Volumes {
     pub fn new() -> Self {

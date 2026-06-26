@@ -9,6 +9,12 @@ pub trait Named {
 #[derive(Debug, PartialEq)]
 pub struct NamedCollection<V: Named + PartialEq>(HashMap<String, V>);
 
+impl<V: Named + PartialEq> Default for NamedCollection<V> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<V: Named + PartialEq> NamedCollection<V> {
     pub fn new() -> Self {
         Self(HashMap::new())
@@ -68,6 +74,7 @@ impl<'a, V: Named + PartialEq> IntoIterator for &'a mut NamedCollection<V> {
     }
 }
 
+#[allow(clippy::indexing_slicing)]
 impl<V: Named + PartialEq> Index<&str> for NamedCollection<V> {
     type Output = V;
     fn index(&self, index: &str) -> &Self::Output {
