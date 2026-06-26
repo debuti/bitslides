@@ -1,4 +1,5 @@
-use std::fmt::Debug;
+use std::hash::Hash;
+use std::{collections::HashSet, fmt::Debug};
 
 use std::path::PathBuf;
 use tokio::sync::mpsc;
@@ -12,7 +13,7 @@ use crate::Volumes;
 /// A syncjob defines a source and a final destination, optionally passing via another volume.
 /// Although it is optional, the value has to be provided to help the algorithm
 ///
-#[derive(PartialEq)]
+#[derive(PartialEq, Eq, Hash)]
 pub struct SyncJobMeta {
     /// Source volume
     pub(crate) src: String,
@@ -113,7 +114,17 @@ impl PartialEq for SyncJobInner {
     }
 }
 
-#[derive(Debug, PartialEq)]
+/// [`SyncJobInner`] [`Eq`] implementation.
+///
+impl Eq for SyncJobInner {}
+
+/// [`SyncJobInner`] [`Hash`] implementation.
+///
+impl Hash for SyncJobInner {
+    fn hash<H: std::hash::Hasher>(&self, _: &mut H) {}
+}
+
+#[derive(Debug, PartialEq, Eq, Hash)]
 pub struct SyncJob {
     meta: SyncJobMeta,
     pub src: PathBuf,
@@ -148,6 +159,34 @@ impl SyncJob {
     }
 }
 
-// FIXME: Move to a owned type (struct (Vec<SyncJob>)) and impl iterator on it. Also provide a sort
+// FIXME: impl iterator on this. Also provide a sort
 // method to sort the syncjobs by sync order
-pub type SyncJobs = Vec<SyncJob>;
+#[derive(Debug)]
+pub struct SyncJobs(HashSet<SyncJob>);
+
+impl SyncJobs {
+    pub fn new() -> Self {
+        Self(HashSet::new())
+    }
+
+    pub fn insert(&mut self, syncjob: SyncJob) {
+        self.0.insert(syncjob);
+    }
+
+    // pub fn len(&self) -> usize {
+    //     self.0.len()
+    // }
+
+    // pub fn contains(&self, syncjob: &SyncJob) -> bool {
+    //     self.0.contains(syncjob)
+    // }
+}
+
+impl IntoIterator for SyncJobs {
+    type Item = SyncJob;
+    type IntoIter = std::collections::hash_set::IntoIter<SyncJob>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}

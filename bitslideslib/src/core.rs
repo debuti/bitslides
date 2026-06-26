@@ -42,7 +42,7 @@ pub(crate) fn core(
 
         log::debug!("Initial syncjobs: {syncjobs:#?}");
 
-        let mut watcher_db: Vec<(PathBuf, mpsc::Sender<()>)> = vec![];
+        let mut syncjob_triggers: Vec<(PathBuf, mpsc::Sender<()>)> = vec![];
 
         for mut syncjob in syncjobs {
             log::debug!("Syncing {:?}", syncjob);
@@ -51,7 +51,7 @@ pub(crate) fn core(
             let Some(trigger) = syncjob.take_trigger() else {
                 bail!("No trigger found for sync job {syncjob:?}");
             };
-            watcher_db.push((syncjob.src.clone(), trigger));
+            syncjob_triggers.push((syncjob.src.clone(), trigger));
 
             command_tx
                 .send(format!("watchr {}", syncjob.src.display()))
@@ -165,7 +165,7 @@ pub(crate) fn core(
                     }
 
                     // See if the path is a syncjob (New/Changed/Removed data)
-                    for (path, trigger) in &watcher_db {
+                    for (path, trigger) in &syncjob_triggers {
                         // Check if any event path is within the watched directory
                         for event_path in &event_paths {
                             if event_path.starts_with(path) {
@@ -269,19 +269,23 @@ fn build_syncjobs(volumes: &mut Volumes) -> Result<SyncJobs> {
     }
 
     // Create the slides that are missing in the destination volumes
-    for syncjob in &syncjobmetas {
-        if !volumes[&syncjob.via].slides.contains_name(&syncjob.dst) {
+    for syncjobmeta in &syncjobmetas {
+        if !volumes[&syncjobmeta.via]
+            .slides
+            .contains_name(&syncjobmeta.dst)
+        {
             volumes
-                .get_mut(&syncjob.via)
+                .get_mut(&syncjobmeta.via)
                 .ok_or_else(|| anyhow!("Volume not found"))?
-                .create_slide(&syncjob.dst)?;
+                .create_slide(&syncjobmeta.dst)?;
         }
     }
 
-    syncjobmetas
-        .into_iter()
-        .map(|x| x.activate(volumes))
-        .collect::<Result<Vec<_>, _>>()
+    let mut syncjobs = SyncJobs::new();
+    for syncjobmeta in syncjobmetas {
+        syncjobs.insert(syncjobmeta.activate(volumes)?);
+    }
+    Ok(syncjobs)
 }
 
 /// Sync the contents of a slide.
