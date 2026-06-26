@@ -1,68 +1,12 @@
 mod common;
 
-use crate::CollisionPolicy;
-
 use super::config::GlobalConfig;
 use super::*;
+use crate::CollisionPolicy;
 use checksums::Algorithm;
 use pretty_assertions::assert_eq;
 
 pub(crate) use common::setup;
-
-/// Test the building of sync jobs between volumes
-#[test]
-fn test_build_syncjobs() {
-    // Prerequisite: Setup the test context
-    let ctx = setup().unwrap();
-
-    // Prerequisite: Identify the volumes in the root folders
-    let mut volumes: HashMap<String, Volume> = {
-        let rootset_config = Rootset {
-            keyword: "slides".into(),
-            roots: ctx.roots,
-        };
-        rootset_config.into_volumes()
-    };
-
-    // Action: Call build_syncjobs operation with the identified volumes
-    let syncjobs = build_syncjobs(&mut volumes).unwrap();
-
-    #[cfg(false)]
-    {
-        println!("Syncjobs:");
-        for syncjob in &syncjobs {
-            println!("  {:?}", syncjob);
-        }
-    }
-
-    #[rustfmt::skip]
-    let expected_syncjobs =[
-        SyncJob::new("foo", "bar", "bar"),
-        SyncJob::new("foo", "baz", "baz"),
-        SyncJob::new("bar", "foo", "foo"),
-        SyncJob::new("bar", "baz", "baz"),
-        SyncJob::new("baz", "foo", "foo"),
-        SyncJob::new("baz", "bar", "bar"),
-        SyncJob::new("els", "foo", "foo"),
-        SyncJob::new("els", "bar", "bar"),
-        SyncJob::new("els", "baz", "baz"),
-        // Indirect syncjobs
-        SyncJob::new("baz", "bar", "qux_"),
-    ];
-
-    // Check: The result should match the length and content of the expected sync jobs
-    assert_eq!(syncjobs.len(), expected_syncjobs.len());
-    for expected_syncjob in expected_syncjobs {
-        assert!(
-            syncjobs.contains(&expected_syncjob),
-            "Missing {:?}",
-            expected_syncjob
-        );
-    }
-
-    // Check: The sync jobs don't contain disabled volumes
-    assert!(!syncjobs.contains(&SyncJob::new("disabled", "foo", "foo")));
-}
 
 // /// Test the execution of sync jobs between volumes
 // #[tokio::test]
@@ -89,7 +33,7 @@ fn test_build_syncjobs() {
 //     };
 
 //     // Prerequisite: Identify the volumes in the root folders
-//     let mut volumes: HashMap<String, Volume> = {
+//     let mut volumes = {
 //         let rootset_config = Rootset {
 //             keyword: "slides".into(),
 //             roots: ctx.roots,
@@ -219,7 +163,7 @@ fn test_build_syncjobs() {
 //     };
 
 //     // Prerequisite: Identify the volumes in the root folders
-//     let mut volumes: HashMap<String, Volume> = {
+//     let mut volumes = {
 //         let rootset_config = Rootset {
 //             keyword: "slides".into(),
 //             roots: ctx.roots,

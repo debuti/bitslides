@@ -1,10 +1,9 @@
 use anyhow::{bail, Result};
 use std::{
-    collections::HashMap,
     path::{Path, PathBuf},
 };
 
-use crate::volume::Volume;
+use crate::{Volume, Volumes};
 
 /// Set of roots
 ///
@@ -28,15 +27,15 @@ impl Rootset {
     ///
     /// This function will identify the volumes and slides for each volume in the current system.
     ///
-    /// Returns a `HashMap` of `Volumes` indexed by their name
+    /// Returns a `Volumes` type 
     ///
     #[must_use]
-    pub fn into_volumes(self) -> HashMap<String, Volume> {
-        let mut volumes: HashMap<String, Volume> = HashMap::new();
+    pub fn into_volumes(&self) -> Volumes {
+        let mut volumes = Volumes::new();
 
         // Identify the volumes in each root
-        for root in self.roots {
-            match Self::identify_volumes(&self.keyword, &root) {
+        for root in &self.roots {
+            match Self::identify_volumes(&self.keyword, root) {
                 Ok(v) => volumes.extend(v),
                 Err(e) => log::warn!("{e}"),
             }
@@ -71,7 +70,7 @@ impl Rootset {
 
             for drive in drives {
                 if let Some(volume) = Volume::from_path(&drive, &self.keyword) {
-                    volumes.insert(volume.name.clone(), volume);
+                    volumes.insert(volume);
                 }
             }
         }
@@ -84,9 +83,9 @@ impl Rootset {
     /// A volume is a folder that contains a slides subfolder (or the chosen keyword).
     /// This subfolder contains the folders whose names will have to match the name of other volumes.
     ///
-    /// Returns a `Result` with a `HashMap` of `Volumes` indexed by their name
-    fn identify_volumes(keyword: &str, root: &Path) -> Result<HashMap<String, Volume>> {
-        let mut volumes = HashMap::new();
+    /// Returns a `Result` with a `Volumes` indexed by their name
+    fn identify_volumes(keyword: &str, root: &Path) -> Result<Volumes> {
+        let mut volumes = Volumes::new();
 
         // Implies .exists()
         if !root.is_dir() {
@@ -104,7 +103,7 @@ impl Rootset {
             if let Ok(file_type) = file_type {
                 if file_type.is_dir() {
                     if let Some(volume) = Volume::from_path(&entry.path(), keyword) {
-                        volumes.insert(volume.name.clone(), volume);
+                        volumes.insert(volume);
                     }
                 }
             }
@@ -119,8 +118,6 @@ mod tests {
 
     use super::Rootset;
     use crate::tests::setup;
-    use crate::Volume;
-    use std::collections::HashMap;
 
     /// Test the identification of volumes inside a root folder
     #[test]
@@ -136,7 +133,7 @@ mod tests {
 
         // Check: The result should contain the volumes "foo" and "bar"
         for volume in ["foo", "bar"] {
-            assert!(volumes.contains_key(volume) && volumes[volume].path.exists());
+            assert!(volumes.contains_name(volume) && volumes[volume].path.exists());
         }
     }
 
@@ -147,7 +144,7 @@ mod tests {
         let ctx = setup().unwrap();
 
         // Action: Call into_volumes operation with the keyword "slides" and the root folders
-        let volumes: HashMap<String, Volume> = {
+        let volumes = {
             let rootset_config = Rootset {
                 keyword: "slides".into(),
                 roots: ctx.roots,
@@ -160,7 +157,7 @@ mod tests {
 
         // Check: The result should contain the volumes "foo" and "bar"
         for volume in ["foo", "bar"] {
-            assert!(volumes.contains_key(volume));
+            assert!(volumes.contains_name(volume));
 
             // Check: The volume is enabled
             assert!(!volumes[volume].disabled);
@@ -170,7 +167,7 @@ mod tests {
 
             // Check: The volume should contain the slides "foo", "bar" and "baz"
             for slide in ["foo", "bar", "baz"] {
-                assert!(volumes[volume].slides.contains_key(slide));
+                assert!(volumes[volume].slides.contains_name(slide));
             }
         }
         assert!(volumes["foo"].slides["bar"].or_else.is_none());
@@ -178,7 +175,7 @@ mod tests {
 
         // Check: The result should contain the volumes "baz" and "els"
         for volume in ["baz", "els"] {
-            assert!(volumes.contains_key(volume));
+            assert!(volumes.contains_name(volume));
 
             // Check: The volume is enabled
             assert!(!volumes[volume].disabled);
@@ -188,14 +185,14 @@ mod tests {
 
             // Check: The volume should contain the following slides
             for slide in ["foo", "bar", "baz", "qux_", "quux_"] {
-                assert!(volumes[volume].slides.contains_key(slide));
+                assert!(volumes[volume].slides.contains_name(slide));
             }
         }
         assert!(volumes["baz"].slides["qux_"].or_else.is_some());
         assert!(volumes["baz"].slides["foo"].or_else.is_some());
 
         // Check: The result should contain the volume "disabled" (per volume config name override)
-        assert!(volumes.contains_key("disabled"));
+        assert!(volumes.contains_name("disabled"));
 
         // Check: The volume "disabled" is disabled
         assert!(volumes["disabled"].disabled);

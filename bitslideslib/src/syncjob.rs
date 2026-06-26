@@ -1,13 +1,19 @@
 use std::fmt::Debug;
 
+use std::path::PathBuf;
 use tokio::sync::mpsc;
+
+use anyhow::{anyhow, Result};
+
+use crate::Volumes;
 
 /// [`SyncJob`] representation.
 ///
 /// A syncjob defines a source and a final destination, optionally passing via another volume.
 /// Although it is optional, the value has to be provided to help the algorithm
 ///
-pub struct SyncJob {
+#[derive(PartialEq)]
+pub struct SyncJobMeta {
     /// Source volume
     pub(crate) src: String,
     /// Proxy volume (intermediate staging volume).
@@ -17,22 +23,10 @@ pub struct SyncJob {
     pub(crate) via: String,
     /// Destination volume
     pub(crate) dst: String,
-    /// Implementation details
-    inner: SyncJobInner,
 }
 
-/// Internal structure holding the synchronization trigger channel.
-///
-/// There is one sender and one receiver per [`SyncJob`]. The sender is used to trigger
-/// synchronization events from the notification system, while the receiver listens for these triggers.
-///
-struct SyncJobInner {
-    tx: Option<tokio::sync::mpsc::Sender<()>>,
-    rx: tokio::sync::mpsc::Receiver<()>,
-}
-
-impl SyncJob {
-    /// Creates a new [`SyncJob`] with the given source, proxy and destination volumes.
+impl SyncJobMeta {
+    /// Creates a new [`SyncJobMeta`] with the given source, proxy and destination volumes.
     ///
     /// # Parameters
     ///
@@ -46,15 +40,89 @@ impl SyncJob {
     /// internal trigger channel used to coordinate synchronization.
     ///
     pub(crate) fn new(src: &str, via: &str, dst: &str) -> Self {
-        let (tx, rx) = mpsc::channel(crate::config::SYNCJOB_CHANNEL_CAPACITY);
         Self {
             src: src.to_string(),
             via: via.to_string(),
             dst: dst.to_string(),
-            inner: SyncJobInner { tx: Some(tx), rx },
         }
     }
 
+    pub(crate) fn activate(self, volumes: &Volumes) -> Result<SyncJob> {
+        // Calculate the syncjob source path
+        let src = volumes
+            .get(&self.src)
+            .and_then(|v| v.slides.get(&self.dst))
+            .map(|s| s.path.clone())
+            .ok_or_else(|| anyhow!("Invalid syncjob src path: {:?}", &self.src))?;
+
+        // Calculate the syncjob destination path
+        let dst = volumes
+            .get(&self.via)
+            .and_then(|v| v.slides.get(&self.dst))
+            .map(|s| s.path.clone())
+            .ok_or_else(|| anyhow!("Invalid syncjob dst path: {:?}", &self.dst))?;
+
+        let (tx, rx) = mpsc::channel(crate::config::SYNCJOB_CHANNEL_CAPACITY);
+
+        Ok(SyncJob {
+            meta: self,
+            src,
+            dst,
+            inner: SyncJobInner { tx: Some(tx), rx },
+        })
+    }
+}
+
+/// [`SyncJobMeta`] [`Debug`] implementation.
+///
+impl Debug for SyncJobMeta {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{} -{}-> {}",
+            self.src,
+            if self.via == self.dst { "_" } else { &self.via },
+            self.dst
+        )
+    }
+}
+
+/// Internal structure holding the synchronization trigger channel.
+///
+/// There is one sender and one receiver per [`SyncJob`]. The sender is used to trigger
+/// synchronization events from the notification system, while the receiver listens for these triggers.
+///
+struct SyncJobInner {
+    tx: Option<tokio::sync::mpsc::Sender<()>>,
+    rx: tokio::sync::mpsc::Receiver<()>,
+}
+
+/// [`SyncJobInner`] [`Debug`] implementation.
+///
+impl Debug for SyncJobInner {
+    fn fmt(&self, _: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        Ok(())
+    }
+}
+
+/// [`SyncJobInner`] [`PartialEq`] implementation.
+///
+impl PartialEq for SyncJobInner {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub struct SyncJob {
+    meta: SyncJobMeta,
+    pub src: PathBuf,
+    pub dst: PathBuf,
+    /// Implementation details
+    inner: SyncJobInner,
+}
+
+impl SyncJob {
     /// Takes the trigger sender from the sync job.
     ///
     /// This method consumes the sender, allowing external components to trigger synchronization events.
@@ -78,27 +146,13 @@ impl SyncJob {
     pub(crate) const fn borrow_receiver(&mut self) -> &mut tokio::sync::mpsc::Receiver<()> {
         &mut self.inner.rx
     }
-}
 
-/// [`SyncJob`] [`Debug`] implementation.
-///
-impl Debug for SyncJob {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{} -{}-> {}",
-            self.src,
-            if self.via == self.dst { "_" } else { &self.via },
-            self.dst
-        )
+    pub(crate) fn via(&self) -> &str {
+        &self.meta.via
     }
-}
 
-/// [`SyncJob`] [`PartialEq`] implementation.
-///
-impl PartialEq for SyncJob {
-    fn eq(&self, other: &Self) -> bool {
-        self.src == other.src && self.via == other.via && self.dst == other.dst
+    pub(crate) fn dst(&self) -> &str {
+        &self.meta.dst
     }
 }
 

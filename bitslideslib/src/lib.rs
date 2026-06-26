@@ -12,24 +12,22 @@
 #![warn(clippy::todo)]
 #![warn(clippy::unimplemented)]
 
-use anyhow::{anyhow, bail, Result};
-use fs::MoveStrategy;
+use anyhow::Result;
 use notify::{Event, EventKind, RecursiveMode, Watcher};
-use std::{
-    collections::HashMap,
-    path::{Path, PathBuf},
-};
-use syncjob::{SyncJob, SyncJobs};
+use std::path::PathBuf;
+use syncjob::{SyncJobMeta, SyncJob, SyncJobs};
 use tokio::{
     select,
     sync::{mpsc, oneshot},
 };
-use volume::Volume;
+use volume::{Volume, Volumes};
 
 use tracer::Tracer;
 
 mod config;
+mod core;
 mod fs;
+mod named_collection;
 mod rootset;
 mod slide;
 mod syncjob;
@@ -41,12 +39,11 @@ pub use config::{Algorithm, CollisionPolicy, GlobalConfig};
 pub use rootset::Rootset;
 pub use token::Token;
 
-
 /// Watcher task creation
-/// 
+///
 /// A watcher takes either a cancellation signal to turn the system off or a
 /// command, and it emits events.
-/// 
+///
 async fn watcher(
     tracer: &Tracer,
     event_tx: mpsc::Sender<Event>,
@@ -128,143 +125,6 @@ async fn watcher(
     Ok(())
 }
 
-/// Core task creation
-/// 
-/// The core receives events and, if needed, triggers commands. It also
-/// spawns as many syncjob tasks as needed.
-/// 
-fn core(
-    tracer: &Tracer,
-    mut event_rx: mpsc::Receiver<Event>,
-    command_tx: mpsc::Sender<String>,
-    config: GlobalConfig,
-) {
-    let tracer = tracer.annotate_author("Core".to_string());
-
-    // FIXME: Retrieve the handle to control its lifetime and ensure it is properly shutdown (see https://github.com/debuti/bitslides/pull/5#discussion_r3299838669)
-    tokio::spawn(async move {
-        // Core initialization
-
-        let mut volumes = {
-            let mut result = HashMap::new();
-
-            // Analyze each rootset to extract volumes and slides
-            for rootset_config in config.rootsets {
-                let some_volumes = rootset_config.into_volumes();
-                result.extend(some_volumes);
-            }
-
-            log::debug!("Volumes for all configs: {result:#?}");
-            result
-        };
-
-        // Now analyze the volumes to generate the sync jobs
-        let mut syncjobs = build_syncjobs(&mut volumes)?;
-
-        log::debug!("Sync jobs: {syncjobs:#?}");
-
-        let move_req = MoveStrategy {
-            collision: config.collision,
-            safe: config.safe,
-            check: config.check,
-            retries: config.retries,
-        };
-
-        let watcher_db = {
-            let mut watcher_db = Vec::new();
-            for syncjob in &mut syncjobs {
-                let path = volumes
-                    .get(&syncjob.src)
-                    .and_then(|v| v.slides.get(&syncjob.dst))
-                    .map(|s| s.path.canonicalize())
-                    .ok_or_else(|| anyhow!("Invalid sync job paths: {:?}", syncjob))??;
-
-                let Some(trigger) = syncjob.take_trigger() else {
-                    bail!("No trigger found for sync job {syncjob:?}");
-                };
-
-                watcher_db.push((path, trigger));
-            }
-            watcher_db
-        };
-
-        for mut syncjob in syncjobs {
-            log::debug!("Syncing {:?}", syncjob);
-            let src = volumes
-                .get(&syncjob.src)
-                .and_then(|v| v.slides.get(&syncjob.dst))
-                .map(|s| s.path.clone())
-                .ok_or_else(|| anyhow!("Invalid sync job paths: {:?}", syncjob))?;
-            let dst = volumes
-                .get(&syncjob.via)
-                .and_then(|v| v.slides.get(&syncjob.dst))
-                .map(|s| s.path.clone())
-                .ok_or_else(|| anyhow!("Invalid sync job paths: {:?}", syncjob))?;
-            let trace = tracer.annotate_author(format!("{syncjob:?}"));
-            let move_req = move_req.clone();
-
-            command_tx.send(format!("watchr {}", src.display())).await?;
-
-            // Spawn a new tokio async task for this syncjob
-            // Drop the JoinHandle. The async task is now free to die when it finishes its job
-
-            // Syncjob loop
-            // FIXME: Retrieve the handle to control its lifetime and ensure it is properly shutdown (see https://github.com/debuti/bitslides/pull/5#discussion_r3299838669)
-            tokio::spawn(async move {
-                loop {
-                    if let Err(e) =
-                        sync_slide(&syncjob, &src, &dst, config.dry_run, &trace, &move_req).await
-                    {
-                        bail!("Error syncing {:?} -> {:?}: {:?}", src, dst, e);
-                    }
-                    // FIXME: Maybe use tokio::sync::notify here instead!
-                    // None is received when the mpsc::Sender is dropped
-                    if syncjob.borrow_receiver().recv().await.is_none() {
-                        return Ok(());
-                    }
-                }
-            });
-        }
-
-        // Core main loop
-        'event_loop: while let Some(event) = event_rx.recv().await {
-            match event.kind {
-                EventKind::Modify(_) | EventKind::Create(_) | EventKind::Remove(_) => {
-                    //TODO: See if the path is rootsets
-                    //TODO: See if the path is slides
-
-                    // See if the path is syncjobs
-                    for (path, trigger) in &watcher_db {
-                        // Check if any event path is within the watched directory
-                        for event_path in &event.paths {
-                            let event_path = event_path.canonicalize();
-                            if let Ok(event_path) = event_path {
-                                if event_path.starts_with(path) {
-                                    let _ = tracer
-                                        .async_log(
-                                            "Event",
-                                            &format!("launching {}", event_path.display()),
-                                        )
-                                        .await;
-                                    if trigger.capacity() > 0 {
-                                        let _ = trigger.send(()).await;
-                                        continue 'event_loop;
-                                    }
-                                    let _ = tracer.async_log("Event", "skipped!").await;
-                                    continue 'event_loop;
-                                }
-                            }
-                        }
-                    }
-                }
-                _ => {}
-            }
-        }
-
-        Ok::<(), anyhow::Error>(())
-    });
-}
-
 /// Monitor all the rootsets, volumes and slides.
 ///
 /// This function will take the input `config`, identify the volumes and slides,
@@ -297,7 +157,7 @@ pub async fn slide(config: GlobalConfig) -> Result<Token> {
     watcher(&tracer, event_tx, command_rx, cancellation_rx).await?;
 
     // Core creation
-    core(&tracer, event_rx, command_tx, config);
+    core::core(&tracer, event_rx, command_tx, config);
 
     Ok(Token::new(cancellation_tx))
 }
@@ -325,99 +185,6 @@ pub async fn slide(config: GlobalConfig) -> Result<Token> {
 //      *      - destination: "Media/Photos"
 //      */
 // }
-
-/// Compose the sync jobs from the volume information.
-///
-/// This function will create the sync jobs based on the identified slides.
-///
-fn build_syncjobs(volumes: &mut HashMap<String, Volume>) -> Result<SyncJobs> {
-    let mut syncjobs = Vec::new();
-
-    for src_name in volumes.keys() {
-        // Skip disabled volumes
-        if volumes[src_name].disabled {
-            continue;
-        }
-
-        for (dst_name, slide) in &volumes[src_name].slides {
-            if src_name == dst_name {
-                continue;
-            }
-            log::debug!("Evaluating routes from {src_name} to {dst_name}");
-
-            // If the destination volume is available, its a direct slide
-            if volumes.contains_key(dst_name) && !volumes[dst_name].disabled {
-                syncjobs.push(SyncJob::new(src_name, dst_name, dst_name));
-                log::debug!(" + Added direct route from {src_name} to {dst_name}");
-                continue;
-            }
-
-            match &slide.or_else {
-                // If the slide has a default route, and the default route is available, its a indirect slide
-                Some(def_route_name) => {
-                    if volumes.contains_key(def_route_name) && !volumes[def_route_name].disabled {
-                        syncjobs.push(SyncJob::new(src_name, def_route_name, dst_name));
-                        log::debug!(" + Added indirect route from {src_name} to {dst_name} via {def_route_name}");
-                        continue;
-                    }
-                    log::info!(
-                        "\"{dst_name}\" and default route \"{def_route_name}\" not available"
-                    );
-                }
-                _ => {
-                    log::info!("\"{dst_name}\" not available and no default route");
-                }
-            }
-        }
-    }
-
-    // Create the slides that are missing in the destination volumes
-    for syncjob in &syncjobs {
-        if !volumes[&syncjob.via].slides.contains_key(&syncjob.dst) {
-            volumes
-                .get_mut(&syncjob.via)
-                .ok_or_else(|| anyhow!("Volume not found"))?
-                .create_slide(&syncjob.dst)?;
-        }
-    }
-
-    Ok(syncjobs)
-}
-
-/// Sync the contents of a slide.
-///
-async fn sync_slide(
-    syncjob: &SyncJob,
-    src: &PathBuf,
-    dst: &Path,
-    dry_run: bool,
-    tracer: &Tracer,
-    move_req: &MoveStrategy,
-) -> Result<()> {
-    log::info!("Syncing {:?}", syncjob);
-
-    let entries = src.read_dir();
-    if entries.is_err() {
-        bail!("{src:?} cannot be read");
-    }
-
-    // Sync every folder inside the slide
-    for entry in entries?.flatten() {
-        let entry_path = entry.path();
-        let file_type = entry.file_type();
-        if let Ok(file_type) = file_type {
-            // The slide should only contain directories or config files
-            if !file_type.is_dir() {
-                log::warn!("{} is not a directory", entry_path.display());
-                continue;
-            }
-            let dst = dst.join(entry.file_name());
-            fs::sync(&entry_path, &dst, dry_run, tracer, move_req).await?;
-        }
-    }
-
-    Ok(())
-}
 
 #[cfg(test)]
 mod tests;

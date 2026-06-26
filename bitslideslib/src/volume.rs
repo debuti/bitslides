@@ -1,14 +1,22 @@
 use crate::config::{self, SlideConfig};
 
-use super::slide::Slide;
+use super::slide::{Slide, Slides};
 use anyhow::{anyhow, bail, Result};
-use std::{collections::HashMap, path::PathBuf};
+use std::{
+    collections::{
+        hash_map::{IntoValues, Values},
+        HashMap,
+    },
+    hash::Hash,
+    ops::Index,
+    path::PathBuf,
+};
 
 /// Volume representation.
 ///
 /// A volume is a storage unit that contains a slides folder (or the chosen keyword).
 ///
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct Volume {
     /// Name of the volume
     pub name: String,
@@ -19,20 +27,24 @@ pub struct Volume {
     /// Path to the volume root. Ex. /path/to/volumes/foo
     pub path: PathBuf,
     /// Slides that are part of the volume. Including the volume mailbox
-    pub slides: HashMap<String, Slide>,
+    pub slides: Slides,
 }
 
 impl Volume {
     /// Create a new volume.
     ///
-    pub fn new(name: String, disabled: bool, keyword: &str, path: PathBuf) -> Self {
+    fn new(name: String, disabled: bool, keyword: &str, path: PathBuf) -> Self {
         Self {
             name,
             disabled,
             keyword: keyword.to_owned(),
             path,
-            slides: HashMap::new(),
+            slides: Slides::new(),
         }
+    }
+
+    pub fn slides_path(&self) -> PathBuf {
+        self.path.join(&self.keyword)
     }
 
     /// Identify the slides inside a volume.
@@ -40,7 +52,7 @@ impl Volume {
     /// Mutates the volume by adding the slides found in the slides subfolder.
     ///
     fn identify_slides(&mut self) -> Result<()> {
-        let subfolders = self.path.join(&self.keyword).read_dir();
+        let subfolders = self.slides_path().read_dir();
 
         if subfolders.is_err() {
             bail!("Unable to read the folder: {self:?}");
@@ -150,16 +162,15 @@ impl Volume {
     /// Add a slide to the volume.
     ///
     pub fn add_slide(&mut self, slide: Slide) {
-        self.slides.insert(slide.name.clone(), slide);
+        self.slides.insert(slide);
     }
 
     /// Create a new slide and add it to the volume.
     ///
     pub fn create_slide(&mut self, name: &str) -> Result<()> {
-        let path = self.path.join(&self.keyword).join(name);
+        let path = self.slides_path().join(name);
         std::fs::create_dir_all(&path)?;
-        self.slides
-            .insert(name.to_owned(), Slide::new(name.to_owned(), path, None));
+        self.slides.insert(Slide::new(name.to_owned(), path, None));
         Ok(())
     }
 }
@@ -172,6 +183,62 @@ impl std::fmt::Display for Volume {
             write!(f, "\n  - {}", slide)?;
         }
         Ok(())
+    }
+}
+
+impl crate::named_collection::Named for Volume {
+    fn name(&self) -> &str {
+        &self.name
+    }
+}
+
+#[derive(Debug)]
+pub struct Volumes(crate::named_collection::NamedCollection<Volume>);
+
+impl Volumes {
+    pub fn new() -> Self {
+        Self(crate::named_collection::NamedCollection::new())
+    }
+}
+
+impl std::ops::Deref for Volumes {
+    type Target = crate::named_collection::NamedCollection<Volume>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl std::ops::DerefMut for Volumes {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl IntoIterator for Volumes {
+    type Item = Volume;
+    type IntoIter = std::collections::hash_map::IntoValues<String, Volume>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}
+
+impl<'a> IntoIterator for &'a Volumes {
+    type Item = &'a Volume;
+    type IntoIter = std::collections::hash_map::Values<'a, String, Volume>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        (&self.0).into_iter()
+    }
+}
+
+impl<'a> IntoIterator for &'a mut Volumes {
+    type Item = &'a mut Volume;
+    type IntoIter = std::collections::hash_map::ValuesMut<'a, String, Volume>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        (&mut self.0).into_iter()
     }
 }
 
@@ -197,7 +264,7 @@ mod tests {
 
         // Check: The volume should contain the slides "foo", "bar" and "baz"
         for slide in ["foo", "bar", "baz"] {
-            assert!(volume.slides.contains_key(slide) && volume.slides[slide].path.exists());
+            assert!(volume.slides.contains_name(slide) && volume.slides[slide].path.exists());
         }
     }
 }
