@@ -5,8 +5,10 @@ edition.workspace = true
 authors.workspace = true
 repository.workspace = true
 license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme.workspace = true
 description = "Synchronize volumes on the background"
-readme = "../README.md"
 
 [[bin]]
 name = "bitslides"

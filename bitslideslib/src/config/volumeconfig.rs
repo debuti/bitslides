@@ -1,7 +1,6 @@
+use anyhow::Result;
 use serde::Deserialize;
 use std::path::Path;
-use anyhow::Result;
-
 
 /// Volume configuration
 ///

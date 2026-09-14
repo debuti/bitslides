@@ -6,9 +6,8 @@ use std::io::Write;
 use std::path::Path;
 use std::path::PathBuf;
 
-use crate::volume::DEFAULT_VOLUME_CONFIG_FILE;
-
-use super::DEFAULT_SLIDE_CONFIG_FILE;
+use crate::config::DEFAULT_SLIDE_CONFIG_FILE;
+use crate::config::DEFAULT_VOLUME_CONFIG_FILE;
 
 /// A structure representing the context for tests, which includes a temporary directory
 /// and a collection of root paths.

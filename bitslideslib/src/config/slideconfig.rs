@@ -1,6 +1,6 @@
 use anyhow::Result;
-use std::path::Path;
 use serde::Deserialize;
+use std::path::Path;
 
 /// Slide configuration
 ///

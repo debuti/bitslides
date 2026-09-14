@@ -50,9 +50,8 @@ async fn delete_empty_folders(root: &Path) -> Result<()> {
         /// Check if a path is an exception.
         ///
         fn is_exception(exceptions: &Vec<PathBuf>, item: &Path) -> bool {
-            let item = match item.canonicalize() {
-                Ok(p) => p,
-                Err(_) => return false,
+            let Ok(item) = item.canonicalize() else {
+                return false;
             };
             for exception in exceptions {
                 if exception.starts_with(&item) {
@@ -69,7 +68,8 @@ async fn delete_empty_folders(root: &Path) -> Result<()> {
         'main: while !stack.is_empty() {
             let mut is_empty = true;
 
-            let current = stack.pop().unwrap();
+            #[allow(clippy::expect_used)]
+            let current = stack.pop().expect("Stack empty. Development error.");
 
             // Read the directory
             if let Ok(mut read_dir) = tokio::fs::read_dir(&current).await {
@@ -85,9 +85,9 @@ async fn delete_empty_folders(root: &Path) -> Result<()> {
                         stack.push(current);
                         stack.push(path);
                         continue 'main;
-                    } else {
-                        add_exception(&mut exceptions, &current)?;
                     }
+
+                    add_exception(&mut exceptions, &current)?;
                 }
             }
             if is_empty {
@@ -149,7 +149,9 @@ pub async fn sync<U: AsRef<Path>, V: AsRef<Path>>(
         // Check if the destination exists, otherwise create it
         if std::fs::metadata(&dst).is_err() {
             log::info!("Mkdir: {:?}", dst);
-            tracer.async_log("MKDIR", &format!("{:?}", &dst)).await?;
+            tracer
+                .async_log("MKDIR", &format!("{}", &dst.display()))
+                .await?;
 
             if !dry_run {
                 std::fs::create_dir_all(&dst)?;
@@ -172,7 +174,7 @@ pub async fn sync<U: AsRef<Path>, V: AsRef<Path>>(
                 Some(filename) => {
                     log::info!("Move: {:?} -> {:?}", &src, &dst);
                     tracer
-                        .async_log("MV", &format!("{:?} -> {:?}", &src, &dst))
+                        .async_log("MV", &format!("{} -> {}", &src.display(), &dst.display()))
                         .await?;
 
                     let dst = dst.join(filename);
@@ -187,10 +189,10 @@ pub async fn sync<U: AsRef<Path>, V: AsRef<Path>>(
         }
     }
 
-    if !dry_run {
-        delete_empty_folders(&from).await
-    } else {
+    if dry_run {
         Ok(())
+    } else {
+        delete_empty_folders(&from).await
     }
 }
 
@@ -219,7 +221,7 @@ where
                 }
                 CollisionPolicy::Rename { ref suffix } => {
                     dst_ = Some({
-                        let mut new_dst = dst_file.to_path_buf();
+                        let mut new_dst = dst_file.clone();
                         new_dst.set_extension(suffix);
                         new_dst
                     });
@@ -235,13 +237,11 @@ where
         }
     }
 
-    let checksum_src = if let Some(algorithm) = request.check {
+    let checksum_src = request.check.map(|algorithm| {
         let checksum_src = hash_file(src_file, algorithm);
         log::debug!("Checksum(src): {:?}", checksum_src);
-        Some((algorithm, checksum_src))
-    } else {
-        None
-    };
+        (algorithm, checksum_src)
+    });
 
     // Generate WIP filename if safe mode is enabled
     // For photo.jpg, this creates .photo.jpg.wip (a hidden sidecar file)
@@ -254,7 +254,7 @@ where
                 .file_name()
                 .and_then(|n| n.to_str())
                 .unwrap_or("file");
-            parent.join(format!(".{}.wip", filename))
+            parent.join(format!(".{filename}.wip"))
         };
         &wip_path
     } else {
